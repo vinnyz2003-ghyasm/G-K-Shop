@@ -1,0 +1,20 @@
+{
+  "name": "G&K Shop Tracker",
+  "short_name": "G&K Tracker",
+  "description": "POS, inventory, expenses, and live P&L for G&K shop — works offline.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "New Sale", "url": "/pos", "description": "Log a cash/UPI/credit sale" },
+    { "name": "Dashboard", "url": "/dashboard", "description": "Today's P&L and alerts" }
+  ]
+}
