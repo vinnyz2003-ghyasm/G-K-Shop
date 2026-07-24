@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Plus, Loader2, BookText, ChevronDown, ChevronRight, Phone, UserPlus } from "lucide-react";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,11 +28,9 @@ export default function UdhaarPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [txMap, setTxMap] = useState<Record<string, UdhaarTx[]>>({});
   const [loadingTx, setLoadingTx] = useState<string | null>(null);
-
   const [payModalOpen, setPayModalOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerBalance | null>(null);
   const [saving, setSaving] = useState(false);
-
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
@@ -42,8 +40,7 @@ export default function UdhaarPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("v_customer_balances")
+    const { data } = await (supabase.from("v_customer_balances") as any)
       .select("*")
       .eq("is_unspecified", false)
       .order("outstanding_balance", { ascending: false });
@@ -58,8 +55,7 @@ export default function UdhaarPage() {
     setExpanded(customerId);
     if (!txMap[customerId]) {
       setLoadingTx(customerId);
-      const { data } = await supabase
-        .from("udhaar_transactions")
+      const { data } = await (supabase.from("udhaar_transactions") as any)
         .select("*")
         .eq("customer_id", customerId)
         .order("entry_date", { ascending: false })
@@ -80,7 +76,7 @@ export default function UdhaarPage() {
 
   async function onPaySubmit(values: UdhaarPaymentInput) {
     setSaving(true);
-    const { error } = await supabase.from("udhaar_transactions").insert({
+    const { error } = await (supabase.from("udhaar_transactions") as any).insert({
       customer_id: values.customer_id,
       entry_type: "Payment Received",
       amount: values.amount,
@@ -91,7 +87,6 @@ export default function UdhaarPage() {
     if (error) { toast.error(error.message); return; }
     toast.success(`Payment of ${formatINR(values.amount)} recorded for ${selectedCustomer?.name}`);
     setPayModalOpen(false);
-    // refresh this customer's tx + balances
     setTxMap((prev) => { const n = { ...prev }; delete n[values.customer_id]; return n; });
     void load();
   }
@@ -99,7 +94,7 @@ export default function UdhaarPage() {
   async function addCustomer() {
     if (!newName.trim()) return;
     setAddingCustomer(true);
-    const { error } = await supabase.from("customers").insert({
+    const { error } = await (supabase.from("customers") as any).insert({
       name: newName.trim(),
       phone: newPhone.trim() || null,
     });
@@ -110,12 +105,13 @@ export default function UdhaarPage() {
     void load();
   }
 
-  const totalOutstanding = balances.filter((b) => b.outstanding_balance > 0).reduce((s, b) => s + b.outstanding_balance, 0);
+  const totalOutstanding = balances
+    .filter((b) => b.outstanding_balance > 0)
+    .reduce((s, b) => s + b.outstanding_balance, 0);
   const debtors = balances.filter((b) => b.outstanding_balance > 0).length;
 
   return (
     <div className="space-y-4 pb-8">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Udhaar (Credit Ledger)</h1>
@@ -129,10 +125,9 @@ export default function UdhaarPage() {
         </Button>
       </div>
 
-      {/* Summary strip */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[
-          { label: "Total Outstanding", value: totalOutstanding, cls: "text-warning" },
+          { label: "Total Outstanding", value: totalOutstanding, cls: "text-warning", raw: false },
           { label: "Customers with Debt", value: debtors, cls: "text-foreground", raw: true },
           { label: "Total Customers", value: balances.length, cls: "text-muted-foreground", raw: true },
         ].map((s) => (
@@ -147,7 +142,6 @@ export default function UdhaarPage() {
         ))}
       </div>
 
-      {/* Customer list */}
       {loading ? (
         <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : balances.length === 0 ? (
@@ -163,14 +157,11 @@ export default function UdhaarPage() {
             const isExpanded = expanded === b.customer_id;
             const isLoading = loadingTx === b.customer_id;
             const txs = txMap[b.customer_id] ?? [];
-
             return (
               <Card key={b.customer_id} className={b.outstanding_balance > 0 ? "border-warning/30" : ""}>
                 <CardContent className="p-0">
-                  <div
-                    className="flex cursor-pointer items-center justify-between gap-3 p-4"
-                    onClick={() => void toggleExpand(b.customer_id)}
-                  >
+                  <div className="flex cursor-pointer items-center justify-between gap-3 p-4"
+                    onClick={() => void toggleExpand(b.customer_id)}>
                     <div className="flex items-center gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold">
                         {b.name.charAt(0).toUpperCase()}
@@ -184,7 +175,6 @@ export default function UdhaarPage() {
                         )}
                       </div>
                     </div>
-
                     <div className="flex items-center gap-3">
                       <div className="text-right">
                         <p className={`text-sm font-semibold tabular-nums ${b.outstanding_balance > 0 ? "text-warning" : "text-primary"}`}>
@@ -195,19 +185,16 @@ export default function UdhaarPage() {
                         </p>
                       </div>
                       {b.outstanding_balance > 0 && (
-                        <Button
-                          size="sm"
-                          onClick={(e) => { e.stopPropagation(); openPayModal(b); }}
-                          className="gap-1.5 text-xs"
-                        >
+                        <Button size="sm" onClick={(e) => { e.stopPropagation(); openPayModal(b); }} className="gap-1.5 text-xs">
                           <Plus className="h-3 w-3" /> Record Payment
                         </Button>
                       )}
-                      {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                      {isExpanded
+                        ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                     </div>
                   </div>
 
-                  {/* Transaction drill-down */}
                   {isExpanded && (
                     <div className="border-t border-border">
                       {isLoading ? (
@@ -229,10 +216,8 @@ export default function UdhaarPage() {
                               <tr key={tx.udhaar_id} className="border-t border-border/30">
                                 <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">{formatDateDisplay(tx.entry_date)}</td>
                                 <td className="px-4 py-2">
-                                  <Badge
-                                    variant={tx.entry_type === "Credit Given" ? "warning" : "default"}
-                                    className={tx.entry_type === "Payment Received" ? "bg-primary/20 text-primary" : ""}
-                                  >
+                                  <Badge variant={tx.entry_type === "Credit Given" ? "warning" : "default"}
+                                    className={tx.entry_type === "Payment Received" ? "bg-primary/20 text-primary" : ""}>
                                     {tx.entry_type}
                                   </Badge>
                                 </td>
@@ -262,7 +247,6 @@ export default function UdhaarPage() {
         </div>
       )}
 
-      {/* Record Payment Modal */}
       <Dialog open={payModalOpen} onOpenChange={setPayModalOpen}>
         <DialogContent>
           <DialogHeader>
@@ -298,7 +282,6 @@ export default function UdhaarPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Customer Modal */}
       <Dialog open={addCustomerOpen} onOpenChange={setAddCustomerOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add New Customer</DialogTitle></DialogHeader>

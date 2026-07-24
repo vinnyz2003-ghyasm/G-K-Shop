@@ -62,8 +62,7 @@ export default function ExpensesPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("expenses")
+    const { data } = await (supabase.from("expenses") as any)
       .select("*")
       .order("expense_date", { ascending: false })
       .order("created_at", { ascending: false });
@@ -96,7 +95,7 @@ export default function ExpensesPage() {
   async function deleteExpense(id: string) {
     if (!confirm("Delete this expense? This cannot be undone.")) return;
     setDeletingId(id);
-    const { error } = await supabase.from("expenses").delete().eq("expense_id", id);
+    const { error } = await (supabase.from("expenses") as any).delete().eq("expense_id", id);
     setDeletingId(null);
     if (error) toast.error(error.message);
     else { toast.success("Expense deleted"); void load(); }
@@ -127,15 +126,11 @@ export default function ExpensesPage() {
         </Button>
       </div>
 
-      {/* Category breakdown */}
       {totalByCategory.length > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {totalByCategory.map((c) => (
-            <Card
-              key={c.category}
-              className="cursor-pointer transition-opacity"
-              onClick={() => setCategoryFilter(categoryFilter === c.category ? "all" : c.category)}
-            >
+            <Card key={c.category} className="cursor-pointer transition-opacity"
+              onClick={() => setCategoryFilter(categoryFilter === c.category ? "all" : c.category)}>
               <CardContent className="p-3">
                 <p className="truncate text-xs text-muted-foreground">{c.category}</p>
                 <p className="mt-1 text-base font-semibold tabular-nums text-destructive">{formatINR(c.total)}</p>
@@ -146,16 +141,13 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      {/* Filters */}
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search description or category…" className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-full sm:w-52">
-            <SelectValue placeholder="All Categories" />
-          </SelectTrigger>
+          <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="All Categories" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
             {EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -163,7 +155,6 @@ export default function ExpensesPage() {
         </Select>
       </div>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           {loading ? (
@@ -196,9 +187,7 @@ export default function ExpensesPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">{e.description || "—"}</td>
-                      <td className="px-4 py-3">
-                        <Badge variant="outline" className="text-xs">{e.payment_mode}</Badge>
-                      </td>
+                      <td className="px-4 py-3"><Badge variant="outline" className="text-xs">{e.payment_mode}</Badge></td>
                       <td className="px-4 py-3 text-right font-medium tabular-nums text-destructive">{formatINR(e.amount)}</td>
                       <td className="px-4 py-3 text-right">
                         <Button size="icon" variant="ghost" disabled={deletingId === e.expense_id} onClick={() => void deleteExpense(e.expense_id)}>
@@ -225,7 +214,6 @@ export default function ExpensesPage() {
         </CardContent>
       </Card>
 
-      {/* Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Expense</DialogTitle></DialogHeader>
