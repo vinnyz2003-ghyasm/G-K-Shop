@@ -1,24 +1,24 @@
 import Dexie, { type Table } from "dexie";
 
-/** Tables this app currently queues writes for. Add a new value here before wiring up a new module's offline support. */
 export type OutboxTableName = "sales" | "purchases" | "expenses" | "customers" | "sale_items";
 
 export interface OutboxItem {
-  id?: number;                 // Dexie auto-increment local id
+  id?: number;
   table: OutboxTableName;
-  client_uuid: string;         // local tracking key (shown in UI / used as the Dexie lookup, not necessarily a server column)
-  conflictColumn: string;      // the column Supabase should upsert on — 'client_uuid' for sales/purchases/expenses,
-                                // but 'customer_id' for customers and 'sale_item_id' for sale_items, since those
-                                // tables don't have a separate client_uuid column — the client just supplies the PK itself.
+  client_uuid: string;
+  conflictColumn: string;
   payload: Record<string, unknown>;
-  status: "pending" | "syncing" | "failed" | "synced";
+  // ─── FIX ─────────────────────────────────────────────────────────────────
+  // "abandoned" was missing from this union — sync-engine.ts sets this status
+  // when an item exceeds MAX_RETRY_ATTEMPTS. TypeScript rejected the build
+  // because the type here only had "pending" | "syncing" | "failed" | "synced".
+  // ─────────────────────────────────────────────────────────────────────────
+  status: "pending" | "syncing" | "failed" | "synced" | "abandoned";
   attempts: number;
   last_error?: string;
-  created_at: string;          // ISO timestamp, local device clock — also the sync replay order, so FK-dependent
-                                // rows (e.g. a sale_items line needing its parent sales row to exist first) sync in order.
+  created_at: string;
 }
 
-/** Read-only local mirrors, refreshed whenever the app is online, so POS/Udhaar screens still render with last-known data offline. */
 export interface CachedProduct {
   product_id: string;
   name: string;
@@ -44,7 +44,7 @@ class GnKOfflineDB extends Dexie {
   cachedCustomers!: Table<CachedCustomer, string>;
 
   constructor() {
-    super("GnKShopTrackerDB"); // renamed from KiranaOfflineDB — version bump handles migration
+    super("GnKShopTrackerDB");
     this.version(2).stores({
       outbox: "++id, table, client_uuid, status, created_at",
       cachedProducts: "product_id, upc_barcode, name",
@@ -53,5 +53,6 @@ class GnKOfflineDB extends Dexie {
   }
 }
 
-// Dexie requires a browser (IndexedDB) context — guard for SSR.
-export const offlineDB = typeof window !== "undefined" ? new GnKOfflineDB() : (null as unknown as GnKOfflineDB);
+export const offlineDB = typeof window !== "undefined"
+  ? new GnKOfflineDB()
+  : (null as unknown as GnKOfflineDB);
