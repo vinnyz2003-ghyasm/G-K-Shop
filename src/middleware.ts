@@ -12,13 +12,18 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        // ─── FIX: explicit type on cookiesToSet parameter ─────────────────
+        // TypeScript strict mode requires every parameter to have an explicit
+        // type — "implicitly has an 'any' type" means the compiler couldn't
+        // infer it. Adding the inline type annotation here resolves it.
+        // ─────────────────────────────────────────────────────────────────
+        setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, options as any)
           );
         },
       },
@@ -35,14 +40,14 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname === "/manifest.json" ||
     request.nextUrl.pathname === "/favicon.ico";
 
-  // If not logged in and not already on the login page → redirect to login
+  // Not logged in → redirect to login
   if (!user && !isLoginPage && !isStaticAsset) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  // If logged in and trying to access login page → redirect to dashboard
+  // Already logged in → skip login page, go to dashboard
   if (user && isLoginPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
