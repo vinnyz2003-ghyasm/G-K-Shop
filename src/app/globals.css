@@ -5,13 +5,13 @@
 @layer base {
   :root {
     /* Slate surfaces */
-    --background: 222 47% 11%;        /* slate-900 */
-    --foreground: 210 40% 98%;        /* slate-50 */
-    --card: 217 33% 17%;              /* slate-800 */
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 217 33% 17%;
     --card-foreground: 210 40% 98%;
     --popover: 217 33% 17%;
     --popover-foreground: 210 40% 98%;
-    --border: 217 19% 27%;            /* slate-700 */
+    --border: 217 19% 27%;
     --input: 217 19% 27%;
     --ring: 160 84% 39%;
 
@@ -41,4 +41,21 @@
 @layer base {
   * { @apply border-border; }
   body { @apply bg-background text-foreground antialiased; }
+}
+
+/* ── Gradient + glow utilities used by KpiCard.tsx ──────────────────────────
+   Each KPI accent (primary/secondary/destructive/warning) gets a very subtle
+   diagonal tint plus a 1px colored ring — this is what gives each card its
+   "glow" without needing extra wrapper elements or JS-computed styles.        */
+@layer utilities {
+  .bg-gradient-emerald { background: linear-gradient(135deg, hsl(160 84% 39% / 0.10), hsl(160 84% 39% / 0.02)); }
+  .bg-gradient-indigo  { background: linear-gradient(135deg, hsl(239 84% 67% / 0.10), hsl(239 84% 67% / 0.02)); }
+  .bg-gradient-red     { background: linear-gradient(135deg, hsl(0 72% 51% / 0.10), hsl(0 72% 51% / 0.02)); }
+  .bg-gradient-amber   { background: linear-gradient(135deg, hsl(38 92% 50% / 0.10), hsl(38 92% 50% / 0.02)); }
+  .bg-gradient-muted   { background: linear-gradient(135deg, hsl(215 25% 27% / 0.5), hsl(215 25% 22% / 0.5)); }
+
+  .card-glow-emerald { box-shadow: 0 0 0 1px hsl(160 84% 39% / 0.25); }
+  .card-glow-indigo  { box-shadow: 0 0 0 1px hsl(239 84% 67% / 0.25); }
+  .card-glow-red     { box-shadow: 0 0 0 1px hsl(0 72% 51% / 0.25); }
+  .card-glow-amber   { box-shadow: 0 0 0 1px hsl(38 92% 50% / 0.25); }
 }

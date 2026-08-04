@@ -1,4 +1,5 @@
-// Hand-written to match supabase/migrations/0001_init.sql exactly.
+// Hand-written to match supabase/migrations/0001_init_safe.sql and
+// 0002_filtered_pnl_safe.sql exactly.
 // Once your Supabase project is linked, regenerate with:
 //   npm run db:types
 // and this file becomes redundant (but the shape should stay the same).
@@ -209,7 +210,26 @@ export interface Database {
         };
       };
     };
-    Functions: Record<string, never>;
+    Functions: {
+      // supabase/migrations/0002_filtered_pnl_safe.sql — hand-written ahead
+      // of running that migration + `npm run db:types` for real. Delete this
+      // comment once the real generated file replaces this stub; the shape
+      // should come out the same.
+      fn_filtered_pnl: {
+        Args: { p_from: string; p_to: string }; // 'YYYY-MM-DD'
+        Returns: {
+          cash: number;
+          upi: number;
+          credit: number;
+          gross_revenue: number;
+          cogs: number;
+          total_expenses: number;
+          active_credit: number;
+          net_profit: number;
+          sale_count: number;
+        }[];
+      };
+    };
     Enums: {
       payment_status: PaymentStatus;
       payment_mode: PaymentMode;

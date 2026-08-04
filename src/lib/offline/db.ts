@@ -17,6 +17,15 @@ export interface OutboxItem {
   attempts: number;
   last_error?: string;
   created_at: string;
+  // ─── NEW ─────────────────────────────────────────────────────────────────
+  // Defaults to "upsert" when absent (via `item.operation ?? "upsert"` in
+  // sync-engine.ts), so this stays backward-compatible with anything already
+  // queued in a real user's browser before this field existed. For a
+  // "delete" item, `client_uuid` holds the id VALUE and `conflictColumn`
+  // holds the id COLUMN to match on — same two fields upsert already uses,
+  // just reused for .eq() instead of onConflict; `payload` is unused ({}).
+  // ─────────────────────────────────────────────────────────────────────────
+  operation?: "upsert" | "delete";
 }
 
 export interface CachedProduct {

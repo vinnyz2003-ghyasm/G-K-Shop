@@ -1,15 +1,36 @@
 import { type LucideIcon } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils/cn";
 
 type Accent = "primary" | "secondary" | "destructive" | "warning" | "muted";
 
-const ACCENT_STYLES: Record<Accent, { icon: string; ring: string }> = {
-  primary: { icon: "bg-primary/15 text-primary", ring: "hover:ring-primary/30" },
-  secondary: { icon: "bg-secondary/15 text-secondary", ring: "hover:ring-secondary/30" },
-  destructive: { icon: "bg-destructive/15 text-destructive", ring: "hover:ring-destructive/30" },
-  warning: { icon: "bg-warning/15 text-warning", ring: "hover:ring-warning/30" },
-  muted: { icon: "bg-muted text-muted-foreground", ring: "hover:ring-border" },
+const ACCENT_MAP: Record<Accent, {
+  bg: string; border: string; iconBg: string; iconText: string; valueText: string; glow: string;
+}> = {
+  primary: {
+    bg: "bg-gradient-emerald", border: "border-primary/20",
+    iconBg: "bg-primary/20", iconText: "text-primary", valueText: "text-primary",
+    glow: "card-glow-emerald",
+  },
+  secondary: {
+    bg: "bg-gradient-indigo", border: "border-secondary/20",
+    iconBg: "bg-secondary/20", iconText: "text-secondary", valueText: "text-secondary",
+    glow: "card-glow-indigo",
+  },
+  destructive: {
+    bg: "bg-gradient-red", border: "border-destructive/20",
+    iconBg: "bg-destructive/20", iconText: "text-destructive", valueText: "text-destructive",
+    glow: "card-glow-red",
+  },
+  warning: {
+    bg: "bg-gradient-amber", border: "border-warning/20",
+    iconBg: "bg-warning/20", iconText: "text-warning", valueText: "text-warning",
+    glow: "card-glow-amber",
+  },
+  muted: {
+    bg: "bg-gradient-muted", border: "border-border",
+    iconBg: "bg-muted", iconText: "text-muted-foreground", valueText: "text-foreground",
+    glow: "",
+  },
 };
 
 export interface KpiCardProps {
@@ -21,23 +42,30 @@ export interface KpiCardProps {
   valueClassName?: string;
 }
 
-export function KpiCard({ label, value, icon: Icon, accent = "muted", subtext, valueClassName }: KpiCardProps) {
-  const styles = ACCENT_STYLES[accent];
+export function KpiCard({
+  label, value, icon: Icon, accent = "muted", subtext, valueClassName,
+}: KpiCardProps) {
+  const s = ACCENT_MAP[accent];
 
   return (
-    <Card className={cn("ring-1 ring-transparent transition-shadow", styles.ring)}>
-      <CardContent className="flex items-start justify-between gap-3 p-4">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-          <p className={cn("mt-1.5 text-2xl font-semibold tabular-nums tracking-tight", valueClassName)}>
+    <div className={cn(
+      "relative overflow-hidden rounded-xl border p-4 transition-all duration-200",
+      "hover:scale-[1.015] hover:shadow-lg",
+      s.bg, s.border, s.glow
+    )}>
+      <div className={cn("absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-10", s.iconBg)} />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{label}</p>
+          <p className={cn("mt-2 text-2xl font-bold tabular-nums tracking-tight", valueClassName ?? s.valueText)}>
             {value}
           </p>
           {subtext && <p className="mt-1 text-xs text-muted-foreground">{subtext}</p>}
         </div>
-        <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", styles.icon)}>
-          <Icon className="h-4 w-4" strokeWidth={2} />
+        <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", s.iconBg)}>
+          <Icon className={cn("h-5 w-5", s.iconText)} strokeWidth={2} />
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

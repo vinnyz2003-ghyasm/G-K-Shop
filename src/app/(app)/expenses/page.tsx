@@ -11,24 +11,26 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { TableRowSkeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 
 import { createClient } from "@/lib/supabase/client";
 import { formatINR } from "@/lib/utils/currency";
 import { formatDateDisplay, todayIST } from "@/lib/utils/date";
-import { submitOrQueue } from "@/lib/offline/sync-engine";
+import { submitOrQueue, queueDelete } from "@/lib/offline/sync-engine";
 import { expenseSchema, type ExpenseInput } from "@/lib/validations/purchase-expense.schema";
 import type { Database, ExpenseCategory, PaymentMode } from "@/lib/supabase/database.types";
 
 type Expense = Database["public"]["Tables"]["expenses"]["Row"];
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = [
-  "Rent","Electricity","Staff Salary","Wastage / Expiry",
-  "Packaging","Miscellaneous","Transport","Maintenance",
+  "Rent", "Electricity", "Staff Salary", "Wastage / Expiry",
+  "Packaging", "Miscellaneous", "Transport", "Maintenance",
 ];
-const PAYMENT_MODES: PaymentMode[] = ["Cash","UPI","Bank Transfer","Card","N/A"];
+const PAYMENT_MODES: PaymentMode[] = ["Cash", "UPI", "Bank Transfer", "Card", "N/A"];
 
 const CATEGORY_COLORS: Record<string, string> = {
   "Rent": "bg-indigo-500/20 text-indigo-400",
@@ -56,7 +58,9 @@ export default function ExpensesPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // ── Delete flow state ──────────────────────────────────────────────────────
+  const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
 
   const supabase = createClient();
 
@@ -89,16 +93,66 @@ export default function ExpensesPage() {
     else toast.warning("Saved offline — will sync when back online");
     setModalOpen(false);
     reset(EMPTY);
-    void load();
+    void load(); // full reload here is fine — this is a create, not the hot delete path
   }
 
-  async function deleteExpense(id: string) {
-    if (!confirm("Delete this expense? This cannot be undone.")) return;
-    setDeletingId(id);
-    const { error } = await (supabase.from("expenses") as any).delete().eq("expense_id", id);
-    setDeletingId(null);
-    if (error) toast.error(error.message);
-    else { toast.success("Expense deleted"); void load(); }
+  // ── Optimistic delete ────────────────────────────────────────────────────────
+  // Step 1: trash icon on a row → stage it, open the shared confirm modal.
+  function requestDelete(e: Expense) {
+    setDeleteTarget(e);
+  }
+
+  // Step 2: user confirms → THIS is the optimistic update.
+  //   a) Remove the row from local state immediately — the UI (including the
+  //      "Total shown" footer, which derives from `expenses` via .reduce) updates
+  //      in the same render, with no spinner and no wait on the network.
+  //   b) Close the modal immediately — no lag between "Delete" click and the
+  //      row disappearing, which is the actual bug being fixed here.
+  //   c) Fire the delete through the SAME offline outbox creates already use
+  //      (queueDelete mirrors submitOrQueue) — so deleting while offline
+  //      queues and syncs later instead of hard-failing. Previously this
+  //      called supabase.delete() directly, which meant deleting was the one
+  //      write on this page that DIDN'T work offline even though creating an
+  //      expense already did.
+  //   d) If it comes back as an outright error (not just "queued"), put the
+  //      row back exactly where it was (by re-inserting and re-sorting) and
+  //      show a toast explaining the rollback — the user's list ends up
+  //      consistent with the database either way, they're just not blocked
+  //      waiting to find out.
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+
+    // (a) + (b) — instant local removal, instant modal close
+    setExpenses((prev) => prev.filter((e) => e.expense_id !== target.expense_id));
+    setDeleteTarget(null);
+
+    // (c) — background request, not awaited by the UI before removing the row
+    const result = await queueDelete("expenses", "expense_id", target.expense_id);
+
+    if (result.status === "error") {
+      // (d) — rollback: put it back in date-order, then newest-first within
+      // the same date, matching the original query's .order() clauses.
+      setExpenses((prev) => {
+        const restored = [...prev, target];
+        return restored.sort((a, b) => {
+          if (a.expense_date !== b.expense_date) return b.expense_date.localeCompare(a.expense_date);
+          return b.created_at.localeCompare(a.created_at);
+        });
+      });
+      toast.error(`Couldn't delete "${target.category}" expense — restored. ${result.message}`);
+      return;
+    }
+
+    // Success toast is deliberately quiet/short since the row already
+    // vanished a moment ago — this just confirms it's permanent. "queued"
+    // gets the same warning phrasing the create flow already uses above,
+    // so offline behavior reads consistently across both actions.
+    if (result.status === "queued") {
+      toast.warning("Deleted — will sync when back online");
+    } else {
+      toast.success("Expense deleted");
+    }
   }
 
   const filtered = expenses.filter((e) => {
@@ -112,14 +166,20 @@ export default function ExpensesPage() {
     total: expenses.filter((e) => e.category === cat).reduce((s, e) => s + e.amount, 0),
   })).filter((c) => c.total > 0).sort((a, b) => b.total - a.total);
 
+  // Both of these derive directly from `expenses` state, so the optimistic
+  // removal above updates them in the exact same render — no separate
+  // "recalculate totals" step, no flash of the stale total before it corrects.
   const grandTotal = expenses.reduce((s, e) => s + e.amount, 0);
+  const filteredTotal = filtered.reduce((s, e) => s + e.amount, 0);
 
   return (
     <div className="space-y-4 pb-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Expenses</h1>
-          <p className="text-sm text-muted-foreground">Total: <span className="font-medium text-destructive">{formatINR(grandTotal)}</span></p>
+          <p className="text-sm text-muted-foreground">
+            Total: <span className="font-medium text-destructive">{formatINR(grandTotal)}</span>
+          </p>
         </div>
         <Button onClick={() => { reset(EMPTY); setModalOpen(true); }} className="gap-2">
           <Plus className="h-4 w-4" /> Add Expense
@@ -129,8 +189,11 @@ export default function ExpensesPage() {
       {totalByCategory.length > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {totalByCategory.map((c) => (
-            <Card key={c.category} className="cursor-pointer transition-opacity"
-              onClick={() => setCategoryFilter(categoryFilter === c.category ? "all" : c.category)}>
+            <Card
+              key={c.category}
+              className="cursor-pointer transition-opacity"
+              onClick={() => setCategoryFilter(categoryFilter === c.category ? "all" : c.category)}
+            >
               <CardContent className="p-3">
                 <p className="truncate text-xs text-muted-foreground">{c.category}</p>
                 <p className="mt-1 text-base font-semibold tabular-nums text-destructive">{formatINR(c.total)}</p>
@@ -157,29 +220,33 @@ export default function ExpensesPage() {
 
       <Card>
         <CardContent className="p-0">
-          {loading ? (
-            <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-          ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
-              <Receipt className="h-8 w-8" />
-              <p className="text-sm">No expenses found</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium">Category</th>
-                    <th className="px-4 py-3 font-medium">Description</th>
-                    <th className="px-4 py-3 font-medium">Mode</th>
-                    <th className="px-4 py-3 font-medium text-right">Amount</th>
-                    <th className="px-4 py-3"></th>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3">Description</th>
+                  <th className="px-4 py-3">Mode</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={6} />)
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-16 text-center text-muted-foreground">
+                      <div className="flex flex-col items-center gap-2">
+                        <Receipt className="h-8 w-8" />
+                        <p className="text-sm">No expenses found</p>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((e) => (
-                    <tr key={e.expense_id} className="border-b border-border/50 hover:bg-muted/40">
+                ) : (
+                  filtered.map((e) => (
+                    <tr key={e.expense_id} className="border-b border-border/50 transition-colors hover:bg-muted/40">
                       <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDateDisplay(e.expense_date)}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[e.category] ?? "bg-muted text-muted-foreground"}`}>
@@ -190,27 +257,34 @@ export default function ExpensesPage() {
                       <td className="px-4 py-3"><Badge variant="outline" className="text-xs">{e.payment_mode}</Badge></td>
                       <td className="px-4 py-3 text-right font-medium tabular-nums text-destructive">{formatINR(e.amount)}</td>
                       <td className="px-4 py-3 text-right">
-                        <Button size="icon" variant="ghost" disabled={deletingId === e.expense_id} onClick={() => void deleteExpense(e.expense_id)}>
-                          {deletingId === e.expense_id
-                            ? <Loader2 className="h-4 w-4 animate-spin" />
-                            : <Trash2 className="h-4 w-4 text-destructive/60 hover:text-destructive" />}
+                        {/* Same button size/variant/hover treatment as Inventory's delete action */}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => requestDelete(e)}
+                          title="Delete"
+                          className="hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
+                  ))
+                )}
+              </tbody>
+              {!loading && filtered.length > 0 && (
                 <tfoot>
                   <tr className="border-t border-border bg-muted/30">
                     <td colSpan={4} className="px-4 py-2 text-xs font-medium text-muted-foreground">Total shown</td>
                     <td className="px-4 py-2 text-right font-semibold tabular-nums text-destructive">
-                      {formatINR(filtered.reduce((s, e) => s + e.amount, 0))}
+                      {formatINR(filteredTotal)}
                     </td>
                     <td />
                   </tr>
                 </tfoot>
-              </table>
-            </div>
-          )}
+              )}
+            </table>
+          </div>
         </CardContent>
       </Card>
 
@@ -262,6 +336,15 @@ export default function ExpensesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Shared delete confirmation modal — identical component/copy/layout as Inventory */}
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        itemName={deleteTarget ? `${deleteTarget.category} — ${formatINR(deleteTarget.amount)}` : ""}
+        itemLabel="expense"
+        onConfirm={() => void confirmDelete()}
+      />
     </div>
   );
 }

@@ -24,13 +24,13 @@ function CustomTooltip({ active, payload, label }: any) {
 }
 
 export function SalesVsExpensesChart({ daily }: { daily: DailyRow[] }) {
-  // last 14 days is plenty on a phone screen — 30 is fetched, trim for readability
-  const data = daily.slice(-14);
+  const data = daily.slice(-14); // last 14 of the fetched 30 days — readable on a phone screen
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Daily Sales vs Expenses</CardTitle>
+        <p className="text-xs text-muted-foreground">Always shows the last 14 days, independent of the filter above</p>
       </CardHeader>
       <CardContent className="h-64 pl-0">
         <ResponsiveContainer width="100%" height="100%">
@@ -40,15 +40,12 @@ export function SalesVsExpensesChart({ daily }: { daily: DailyRow[] }) {
               dataKey="day"
               tickFormatter={(d: string) => d.slice(8, 10)}
               tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
+              axisLine={false} tickLine={false}
             />
             <YAxis
               tickFormatter={(v: number) => formatNumberIN(v)}
               tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
-              axisLine={false}
-              tickLine={false}
-              width={48}
+              axisLine={false} tickLine={false} width={48}
             />
             <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }} />
             <Bar dataKey="revenue" name="Sales" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />

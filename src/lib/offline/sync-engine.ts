@@ -56,6 +56,52 @@ export async function submitOrQueue(
     client_uuid: idValue,
     conflictColumn: idColumn,
     payload,
+    operation: "upsert",
+    status: "pending",
+    attempts: 0,
+    created_at: new Date().toISOString(),
+  });
+
+  return { status: "queued", localKey: idValue };
+}
+
+// ─── NEW ─────────────────────────────────────────────────────────────────────
+// Delete counterpart to submitOrQueue(), same shape/behavior: try it online
+// first, queue it if offline or the failure looks transient (network/5xx),
+// surface non-transient failures (e.g. a 23503 foreign-key violation)
+// immediately rather than queuing something that will just fail again on
+// replay. Added so deletes can go through the same outbox creates already
+// use — previously every delete feature called `supabase...delete()`
+// directly, so deleting while offline hard-failed instead of queuing.
+export async function queueDelete(
+  table: OutboxTableName,
+  idColumn: string,
+  idValue: string
+): Promise<SubmitResult> {
+  const supabase = createClient();
+
+  if (navigator.onLine) {
+    try {
+      const { error } = await (supabase.from(table) as any)
+        .delete()
+        .eq(idColumn, idValue);
+
+      if (!error) return { status: "synced", data: null };
+
+      if (!isTransientError(error)) {
+        return { status: "error", message: error.message };
+      }
+    } catch {
+      // Network error — fall through to queue
+    }
+  }
+
+  await offlineDB.outbox.add({
+    table,
+    client_uuid: idValue,
+    conflictColumn: idColumn,
+    payload: {},
+    operation: "delete",
     status: "pending",
     attempts: 0,
     created_at: new Date().toISOString(),
@@ -177,9 +223,13 @@ export async function flushOutbox(): Promise<{
 
     await offlineDB.outbox.update(item.id!, { status: "syncing" });
 
+    // Default to "upsert" for items queued before this field existed.
+    const operation = item.operation ?? "upsert";
+
     try {
-      const { error } = await (supabase.from(item.table) as any)
-        .upsert(item.payload, { onConflict: item.conflictColumn });
+      const { error } = operation === "delete"
+        ? await (supabase.from(item.table) as any).delete().eq(item.conflictColumn, item.client_uuid)
+        : await (supabase.from(item.table) as any).upsert(item.payload, { onConflict: item.conflictColumn });
 
       if (error) {
         failed += 1;
