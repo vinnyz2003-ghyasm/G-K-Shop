@@ -30,7 +30,6 @@ async function getInitialDashboardData(): Promise<DashboardData> {
   const { from, to } = getDateRange(DEFAULT_TIMEFRAME);
 
   const [pnlRes, alertsRes, dailyRes] = await Promise.all([
-    // @ts-expect-error: Temporary bypass until Vercel syncs the updated database.types.ts
     supabase.rpc("fn_filtered_pnl", { p_from: from, p_to: to }),
     supabase.from("v_low_stock_alerts").select("*"),
     supabase.from("v_daily_sales_vs_expenses").select("*").order("day", { ascending: true }),
