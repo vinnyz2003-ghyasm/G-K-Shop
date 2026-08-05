@@ -210,22 +210,22 @@ export interface Database {
         };
       };
     };
-Functions: {
-  fn_filtered_pnl: {
-    Args: { p_from: string; p_to: string }; // 'YYYY-MM-DD'
-    Returns: {
-      cash: number;
-      upi: number;
-      credit: number;
-      gross_revenue: number;
-      cogs: number;
-      total_expenses: number;
-      active_credit: number;
-      net_profit: number;
-      sale_count: number;
-    }[];
-  };
-};
+    Functions: {
+      fn_filtered_pnl: {
+        Args: { p_from: string; p_to: string }; // 'YYYY-MM-DD'
+        Returns: {
+          cash: number;
+          upi: number;
+          credit: number;
+          gross_revenue: number;
+          cogs: number;
+          total_expenses: number;
+          active_credit: number;
+          net_profit: number;
+          sale_count: number;
+        }[];
+      };
+    };
     Enums: {
       payment_status: PaymentStatus;
       payment_mode: PaymentMode;
