@@ -210,24 +210,6 @@ export interface Database {
         };
       };
     };
-<<<<<<< HEAD
-	Functions: {
-		fn_filtered_pnl: {
-			Args: { p_from: string; p_to: string }; // 'YYYY-MM-DD'
-			Returns: {
-				cash: number;
-				upi: number;
-				credit: number;
-				gross_revenue: number;
-				cogs: number;
-				total_expenses: number;
-				active_credit: number;
-				net_profit: number;
-				sale_count: number;
-		}[];
-	  };
-	};
-=======
     Functions: {
       fn_filtered_pnl: {
         Args: { p_from: string; p_to: string }; // 'YYYY-MM-DD'
@@ -244,7 +226,6 @@ export interface Database {
         }[];
       };
     };
->>>>>>> a68deb78c2c8e9cdfd95c82ba3adbea3aa3ea2e2
     Enums: {
       payment_status: PaymentStatus;
       payment_mode: PaymentMode;
