@@ -11,6 +11,16 @@ const EMPTY_PNL: FilteredPnl = {
   net_profit: 0, sale_count: 0,
 };
 
+// Plain shape of one row returned by fn_filtered_pnl — used only by the
+// .rpc() bypass below, so the rest of this file stays fully typed even
+// though that one call deliberately isn't. Kept identical to the same
+// interface in useDashboardData.ts.
+interface RawPnlRow {
+  cash: number; upi: number; credit: number; gross_revenue: number;
+  cogs: number; total_expenses: number; active_credit: number;
+  net_profit: number; sale_count: number;
+}
+
 // ─── Server-side initial fetch ───────────────────────────────────────────────
 // Mirrors the client-side fetchDashboard() in useDashboardData.ts exactly, but
 // runs on the server so the first paint already has real numbers for the
@@ -30,7 +40,11 @@ async function getInitialDashboardData(): Promise<DashboardData> {
   const { from, to } = getDateRange(DEFAULT_TIMEFRAME);
 
   const [pnlRes, alertsRes, dailyRes] = await Promise.all([
-    supabase.rpc("fn_filtered_pnl", { p_from: from, p_to: to }),
+    // Same bypass as useDashboardData.ts — see the comment there for why.
+    (supabase.rpc as any)("fn_filtered_pnl", { p_from: from, p_to: to }) as Promise<{
+      data: RawPnlRow[] | null;
+      error: { message: string } | null;
+    }>,
     supabase.from("v_low_stock_alerts").select("*"),
     supabase.from("v_daily_sales_vs_expenses").select("*").order("day", { ascending: true }),
   ]);

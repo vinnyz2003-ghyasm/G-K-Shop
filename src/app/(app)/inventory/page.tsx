@@ -42,7 +42,7 @@ function StockBadge({ current, reorder }: { current: number; reorder: number }) 
   if (current <= 0)
     return <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" />Out</Badge>;
   if (current <= reorder)
-    return <Badge variant="warning" className="gap-1"><AlertTriangle className="h-3 w-3" />Low</Badge>;
+    return <Badge variant="outline" className="gap-1 border-warning/40 bg-warning/10 text-warning"><AlertTriangle className="h-3 w-3" />Low</Badge>;
   return <Badge variant="default" className="gap-1 bg-primary/20 text-primary"><CheckCircle className="h-3 w-3" />OK</Badge>;
 }
 
@@ -293,7 +293,7 @@ export default function InventoryPage() {
                       <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.cost_price)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.selling_price)}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-primary">
-                        {p.margin_percentage.toFixed(1)}%
+                        {(p.margin_percentage ?? 0).toFixed(1)}%
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-col items-end gap-1">

@@ -22,7 +22,16 @@ import { formatINR } from "@/lib/utils/currency";
 import { formatDateDisplay, todayIST } from "@/lib/utils/date";
 import { submitOrQueue, queueDelete } from "@/lib/offline/sync-engine";
 import { expenseSchema, type ExpenseInput } from "@/lib/validations/purchase-expense.schema";
-import type { Database, ExpenseCategory, PaymentMode } from "@/lib/supabase/database.types";
+import type { Database } from "@/lib/supabase/database.types";
+
+// Derived from the actual generated Enums shape rather than imported as
+// standalone names — the CLI-generated database.types.ts doesn't export
+// ExpenseCategory/PaymentMode as top-level type aliases (only an earlier
+// hand-written version of this file did), so importing them directly broke
+// the build the moment the real generated file replaced that stub. This
+// stays correct across future `npm run db:types` regenerations too.
+type ExpenseCategory = Database["public"]["Enums"]["expense_category"];
+type PaymentMode = Database["public"]["Enums"]["payment_mode"];
 
 type Expense = Database["public"]["Tables"]["expenses"]["Row"];
 
