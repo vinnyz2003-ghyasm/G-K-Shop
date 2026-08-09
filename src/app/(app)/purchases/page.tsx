@@ -111,7 +111,7 @@ export default function PurchasesPage() {
 
   const totalPending = purchases
     .filter((p) => p.payment_status === "Pending")
-    .reduce((s, p) => s + p.total_amount, 0);
+    .reduce((s, p) => s + (p.total_amount ?? 0), 0);
 
   return (
     <div className="space-y-4 pb-8">
@@ -132,8 +132,8 @@ export default function PurchasesPage() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[
-          { label: "Total Purchases", value: purchases.reduce((s, p) => s + p.total_amount, 0), cls: "" },
-          { label: "Paid (COGS)", value: purchases.filter((p) => p.payment_status === "Paid").reduce((s, p) => s + p.total_amount, 0), cls: "text-primary" },
+          { label: "Total Purchases", value: purchases.reduce((s, p) => s + (p.total_amount ?? 0), 0), cls: "" },
+          { label: "Paid (COGS)", value: purchases.filter((p) => p.payment_status === "Paid").reduce((s, p) => s + (p.total_amount ?? 0), 0), cls: "text-primary" },
           { label: "Pending (AP)", value: totalPending, cls: "text-destructive" },
         ].map((c) => (
           <Card key={c.label}>
@@ -201,7 +201,7 @@ export default function PurchasesPage() {
                         <td className="px-4 py-3">{p.supplier_name}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{p.qty} {prod?.unit ?? ""}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.unit_cost)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums font-medium">{formatINR(p.total_amount)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums font-medium">{formatINR(p.total_amount ?? 0)}</td>
                         <td className="px-4 py-3 text-center">
                           {isPending
                             ? <Badge variant="destructive">Pending</Badge>
