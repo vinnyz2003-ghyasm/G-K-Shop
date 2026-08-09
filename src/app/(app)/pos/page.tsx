@@ -27,7 +27,7 @@ export default function PosPage() {
     void loadToday();
   }, [loadToday]);
 
-  const todaysTotal = todaysSales.reduce((sum, s) => sum + s.total_revenue, 0);
+  const todaysTotal = todaysSales.reduce((sum, s) => sum + (s.total_revenue ?? 0), 0);
 
   return (
     <div className="space-y-6 pb-8">
