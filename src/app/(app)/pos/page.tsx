@@ -45,7 +45,7 @@ export default function PosPage() {
             todaysSales.map((s) => (
               <div key={s.transaction_id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
                 <div>
-                  <p className="font-medium">{formatINR(s.total_revenue)}</p>
+                  <p className="font-medium">{formatINR(s.total_revenue ?? 0)}</p>
                   <p className="text-xs text-muted-foreground">
                     {s.entry_mode === "itemized" ? "Itemized" : "EOD summary"}
                     {s.remarks ? ` · ${s.remarks}` : ""}
