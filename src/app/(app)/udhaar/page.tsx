@@ -70,7 +70,8 @@ export default function UdhaarPage() {
 
   function openPayModal(customer: CustomerBalance) {
     setSelectedCustomer(customer);
-    reset({ customer_id: customer.customer_id, amount: 0, entry_date: todayIST(), notes: "" });
+    // FIX: Added ?? "" to safely handle potential null values from the database view
+    reset({ customer_id: customer.customer_id ?? "", amount: 0, entry_date: todayIST(), notes: "" });
     setPayModalOpen(true);
   }
 
@@ -106,9 +107,9 @@ export default function UdhaarPage() {
   }
 
   const totalOutstanding = balances
-    .filter((b) => b.outstanding_balance > 0)
-    .reduce((s, b) => s + b.outstanding_balance, 0);
-  const debtors = balances.filter((b) => b.outstanding_balance > 0).length;
+    .filter((b) => (b.outstanding_balance ?? 0) > 0)
+    .reduce((s, b) => s + (b.outstanding_balance ?? 0), 0);
+  const debtors = balances.filter((b) => (b.outstanding_balance ?? 0) > 0).length;
 
   return (
     <div className="space-y-4 pb-8">
@@ -156,15 +157,15 @@ export default function UdhaarPage() {
           {balances.map((b) => {
             const isExpanded = expanded === b.customer_id;
             const isLoading = loadingTx === b.customer_id;
-            const txs = txMap[b.customer_id] ?? [];
+            const txs = txMap[b.customer_id ?? ""] ?? [];
             return (
-              <Card key={b.customer_id} className={b.outstanding_balance > 0 ? "border-warning/30" : ""}>
+              <Card key={b.customer_id} className={(b.outstanding_balance ?? 0) > 0 ? "border-warning/30" : ""}>
                 <CardContent className="p-0">
                   <div className="flex cursor-pointer items-center justify-between gap-3 p-4"
-                    onClick={() => void toggleExpand(b.customer_id)}>
+                    onClick={() => { if (b.customer_id) void toggleExpand(b.customer_id); }}>
                     <div className="flex items-center gap-3">
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold">
-                        {b.name.charAt(0).toUpperCase()}
+                        {b.name?.charAt(0).toUpperCase() || "?"}
                       </div>
                       <div>
                         <p className="font-medium">{b.name}</p>
@@ -177,14 +178,14 @@ export default function UdhaarPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <p className={`text-sm font-semibold tabular-nums ${b.outstanding_balance > 0 ? "text-warning" : "text-primary"}`}>
-                          {formatINR(b.outstanding_balance)}
+                        <p className={`text-sm font-semibold tabular-nums ${(b.outstanding_balance ?? 0) > 0 ? "text-warning" : "text-primary"}`}>
+                          {formatINR(b.outstanding_balance ?? 0)}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {b.outstanding_balance > 0 ? "owes you" : b.outstanding_balance < 0 ? "overpaid" : "settled"}
+                          {(b.outstanding_balance ?? 0) > 0 ? "owes you" : (b.outstanding_balance ?? 0) < 0 ? "overpaid" : "settled"}
                         </p>
                       </div>
-                      {b.outstanding_balance > 0 && (
+                      {(b.outstanding_balance ?? 0) > 0 && (
                         <Button size="sm" onClick={(e) => { e.stopPropagation(); openPayModal(b); }} className="gap-1.5 text-xs">
                           <Plus className="h-3 w-3" /> Record Payment
                         </Button>
@@ -223,7 +224,7 @@ export default function UdhaarPage() {
                                 </td>
                                 <td className="px-4 py-2 text-muted-foreground">{tx.notes || "—"}</td>
                                 <td className={`px-4 py-2 text-right font-medium tabular-nums ${tx.entry_type === "Credit Given" ? "text-warning" : "text-primary"}`}>
-                                  {tx.entry_type === "Credit Given" ? "+" : "-"}{formatINR(tx.amount)}
+                                  {tx.entry_type === "Credit Given" ? "+" : "-"}{formatINR(tx.amount ?? 0)}
                                 </td>
                               </tr>
                             ))}
@@ -231,8 +232,8 @@ export default function UdhaarPage() {
                           <tfoot>
                             <tr className="border-t border-border bg-muted/30">
                               <td colSpan={3} className="px-4 py-2 text-xs text-muted-foreground">Balance</td>
-                              <td className={`px-4 py-2 text-right font-semibold tabular-nums ${b.outstanding_balance > 0 ? "text-warning" : "text-primary"}`}>
-                                {formatINR(b.outstanding_balance)}
+                              <td className={`px-4 py-2 text-right font-semibold tabular-nums ${(b.outstanding_balance ?? 0) > 0 ? "text-warning" : "text-primary"}`}>
+                                {formatINR(b.outstanding_balance ?? 0)}
                               </td>
                             </tr>
                           </tfoot>
