@@ -50,27 +50,31 @@ async function getInitialDashboardData(): Promise<DashboardData> {
   ]);
 
   const pnlRow = pnlRes.data?.[0];
+  
+  // FIX 1: Wrap every value in Number() to strip BigInts and decimals into native JS numbers
   const pnl: FilteredPnl = pnlRow
     ? {
-        cash: pnlRow.cash,
-        upi: pnlRow.upi,
-        credit: pnlRow.credit,
-        gross_revenue: pnlRow.gross_revenue,
-        cogs: pnlRow.cogs,
-        total_expenses: pnlRow.total_expenses,
-        active_credit: pnlRow.active_credit,
-        net_profit: pnlRow.net_profit,
-        sale_count: pnlRow.sale_count,
+        cash: Number(pnlRow.cash || 0),
+        upi: Number(pnlRow.upi || 0),
+        credit: Number(pnlRow.credit || 0),
+        gross_revenue: Number(pnlRow.gross_revenue || 0),
+        cogs: Number(pnlRow.cogs || 0),
+        total_expenses: Number(pnlRow.total_expenses || 0),
+        active_credit: Number(pnlRow.active_credit || 0),
+        net_profit: Number(pnlRow.net_profit || 0),
+        sale_count: Number(pnlRow.sale_count || 0),
       }
     : EMPTY_PNL;
-	
-  const rawData = {
-    pnl,
-    alerts: alertsRes.data ?? [],
-    daily: dailyRes.data ?? [],
-  };
 
-  return JSON.parse(JSON.stringify(rawData));
+  // FIX 2: Manually map Supabase arrays to 100% native arrays/objects to bypass the Next.js toJSON crash
+  const safeAlerts = (alertsRes.data || []).map((alert) => ({ ...alert }));
+  const safeDaily = (dailyRes.data || []).map((day) => ({ ...day }));
+
+  return {
+    pnl,
+    alerts: safeAlerts,
+    daily: safeDaily,
+  };
 }
 
 export default async function DashboardPage() {
