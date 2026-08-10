@@ -63,12 +63,14 @@ async function getInitialDashboardData(): Promise<DashboardData> {
         sale_count: pnlRow.sale_count,
       }
     : EMPTY_PNL;
-
-  return {
+	
+  const rawData = {
     pnl,
     alerts: alertsRes.data ?? [],
     daily: dailyRes.data ?? [],
   };
+
+  return JSON.parse(JSON.stringify(rawData));
 }
 
 export default async function DashboardPage() {
