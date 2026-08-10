@@ -67,8 +67,8 @@ async function getInitialDashboardData(): Promise<DashboardData> {
     : EMPTY_PNL;
 
   // FIX 2: Manually map Supabase arrays to 100% native arrays/objects to bypass the Next.js toJSON crash
-  const safeAlerts = (alertsRes.data || []).map((alert) => ({ ...alert }));
-  const safeDaily = (dailyRes.data || []).map((day) => ({ ...day }));
+  const safeAlerts = (alertsRes.data || []).map((alert: any) => ({ ...alert }));
+  const safeDaily = (dailyRes.data || []).map((day: any) => ({ ...day }));
 
   return {
     pnl,
