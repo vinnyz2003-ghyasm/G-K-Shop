@@ -1,20 +1,13 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { DashboardClient } from "@/components/dashboard/DashboardClient";
-import { getDateRange, DEFAULT_TIMEFRAME } from "@/components/dashboard/TimeFrameFilter";
 import type { DashboardData, FilteredPnl } from "@/hooks/useDashboardData";
 
-export const revalidate = 0; // Operational dashboard — bypass cache for fresh data
+export const revalidate = 0; // always fresh — this is a live operational dashboard
 
 const EMPTY_PNL: FilteredPnl = {
-  cash: 0,
-  upi: 0,
-  credit: 0,
-  gross_revenue: 0,
-  cogs: 0,
-  total_expenses: 0,
-  active_credit: 0,
-  net_profit: 0,
-  sale_count: 0,
+  cash: 0, upi: 0, credit: 0, gross_revenue: 0,
+  cogs: 0, total_expenses: 0, active_credit: 0,
+  net_profit: 0, sale_count: 0,
 };
 
 interface RawPnlRow {
@@ -29,28 +22,23 @@ interface RawPnlRow {
   sale_count: number | string | bigint | null;
 }
 
-/**
- * Sanitizes raw database rows into pure plain JavaScript objects,
- * explicitly coercing BigInts and null values to prevent RSC serialization crashes.
- */
-function sanitizeRecord<T extends Record<string, any>>(record: T): Record<string, any> {
-  const cleanRecord: Record<string, any> = {};
-  for (const key of Object.keys(record)) {
-    const value = record[key];
-    if (typeof value === "bigint") {
-      cleanRecord[key] = Number(value);
-    } else if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      cleanRecord[key] = sanitizeRecord(value);
-    } else {
-      cleanRecord[key] = value;
-    }
-  }
-  return cleanRecord;
+// FIX 1: We calculate the default 30-day range directly on the server to completely 
+// avoid importing functions from a "use client" file (which caused the crash).
+function getInitialServerDateRange() {
+  const today = new Date();
+  const pastDate = new Date();
+  pastDate.setDate(today.getDate() - 30);
+  
+  // Format as YYYY-MM-DD
+  return {
+    from: pastDate.toISOString().split('T')[0],
+    to: today.toISOString().split('T')[0]
+  };
 }
 
 async function getInitialDashboardData(): Promise<DashboardData> {
   const supabase = createServerSupabaseClient();
-  const { from, to } = getDateRange(DEFAULT_TIMEFRAME);
+  const { from, to } = getInitialServerDateRange();
 
   const [pnlRes, alertsRes, dailyRes] = await Promise.all([
     (supabase.rpc as any)("fn_filtered_pnl", { p_from: from, p_to: to }) as Promise<{
@@ -62,8 +50,8 @@ async function getInitialDashboardData(): Promise<DashboardData> {
   ]);
 
   const pnlRow = pnlRes.data?.[0];
-
-  // Coerce all monetary and count values into safe JS Numbers
+  
+  // FIX 2: Retain the strict Number() casting to prevent BigInt RSC serialization errors
   const pnl: FilteredPnl = pnlRow
     ? {
         cash: Number(pnlRow.cash ?? 0),
@@ -78,17 +66,14 @@ async function getInitialDashboardData(): Promise<DashboardData> {
       }
     : EMPTY_PNL;
 
-  // Transform database result arrays into sanitized, un-prototyped plain object arrays
-  const rawAlerts = alertsRes.data ?? [];
-  const rawDaily = dailyRes.data ?? [];
-
-  const safeAlerts = rawAlerts.map((item) => sanitizeRecord(item as Record<string, any>));
-  const safeDaily = rawDaily.map((item) => sanitizeRecord(item as Record<string, any>));
+  // FIX 3: Retain pure JS array mapping to safely bypass Next.js caching layers
+  const safeAlerts = (alertsRes.data || []).map((item: any) => ({ ...item }));
+  const safeDaily = (dailyRes.data || []).map((item: any) => ({ ...item }));
 
   return {
     pnl,
-    alerts: safeAlerts as unknown as DashboardData["alerts"],
-    daily: safeDaily as unknown as DashboardData["daily"],
+    alerts: safeAlerts,
+    daily: safeDaily,
   };
 }
 
