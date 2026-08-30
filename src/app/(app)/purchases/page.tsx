@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Plus, Search, CheckCircle, Loader2, Truck, AlertCircle } from "lucide-react";
+import { Plus, Search, CheckCircle, Loader2, Truck, AlertCircle, ScanLine } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { BarcodeScannerDialog } from "@/components/purchases/BarcodeScannerDialog";
+import { QuickAddProductDialog } from "@/components/purchases/QuickAddProductDialog";
 
 import { createClient } from "@/lib/supabase/client";
 import { formatINR } from "@/lib/utils/currency";
@@ -21,6 +23,7 @@ import { formatDateDisplay, todayIST } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { purchaseSchema, type PurchaseInput } from "@/lib/validations/purchase-expense.schema";
 import { submitOrQueue } from "@/lib/offline/sync-engine";
+import { offlineDB } from "@/lib/offline/db";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Purchase = Database["public"]["Tables"]["purchases"]["Row"];
@@ -45,6 +48,12 @@ export default function PurchasesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
+
+  // ── Barcode scanner state ────────────────────────────────────────────────
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [scannedBarcode, setScannedBarcode] = useState("");
+  const [matching, setMatching] = useState(false);
 
   const supabase = createClient();
 
@@ -86,6 +95,83 @@ export default function PurchasesPage() {
     void load();
   }
 
+  // Shared by both the "matched an existing product" and "just created a new
+  // one" paths — opens the Log Purchase modal if it isn't already open (the
+  // scan can be the very first action, before the modal exists) and selects
+  // the product either way. Only resets the form when the modal wasn't
+  // already open, so scanning from the icon INSIDE an already-open modal
+  // preserves whatever the person already typed (supplier, qty, date, etc.).
+  function selectProductInForm(productId: string) {
+    if (!modalOpen) {
+      reset(EMPTY);
+      setModalOpen(true);
+    }
+    setValue("product_id", productId, { shouldValidate: true });
+  }
+
+  // Called with the decoded string once BarcodeScannerDialog gets a
+  // successful read.
+  //
+  // Tries a live lookup first — so a barcode added from another device or
+  // session a moment ago is still found correctly — and only falls back to
+  // offlineDB.cachedProducts (the same offline product cache ItemizedSaleForm
+  // and CustomerPicker already read from) when there's no connection or the
+  // live query itself throws. This fallback wasn't in the first draft, which
+  // called Supabase directly with no offline path at all — a real gap in an
+  // app whose whole premise is working through connectivity drops, and
+  // barcode-scanning a delivery is a plausible moment for exactly that.
+  //
+  // A live "not found" is treated as authoritative and goes straight to
+  // quick-add with no extra caveat. An offline "not found" gets a softer
+  // warning instead, since it may just mean this device's cache hasn't seen
+  // a product created elsewhere yet — not that the product is truly new.
+  async function handleScan(code: string) {
+    setScannerOpen(false);
+    setMatching(true);
+
+    let match: Product | null = null;
+    let live = false;
+
+    try {
+      if (navigator.onLine) {
+        const { data } = await (supabase.from("products") as any)
+          .select("product_id, name, unit")
+          .eq("upc_barcode", code)
+          .eq("is_active", true)
+          .maybeSingle();
+        match = data ?? null;
+        live = true;
+      }
+    } catch (err) {
+      console.error("[Purchases] live barcode lookup failed, falling back to offline cache:", err);
+    }
+
+    if (!match && !live) {
+      const cached = await offlineDB?.cachedProducts.where("upc_barcode").equals(code).first().catch(() => undefined);
+      if (cached) match = { product_id: cached.product_id, name: cached.name, unit: cached.unit };
+    }
+
+    setMatching(false);
+
+    if (match) {
+      selectProductInForm(match.product_id);
+      toast.success(`Matched: ${match.name}${live ? "" : " (offline copy)"}`);
+      return;
+    }
+
+    setScannedBarcode(code);
+    setQuickAddOpen(true);
+    if (!live) {
+      toast.warning("No connection to check the full catalog — add as new if this isn't already a product");
+    }
+  }
+
+  function handleProductCreated(product: { product_id: string; name: string; unit: string }) {
+    setProducts((prev) => [...prev, product].sort((a, b) => a.name.localeCompare(b.name)));
+    setQuickAddOpen(false);
+    selectProductInForm(product.product_id);
+  }
+
   async function markPaid(purchase_id: string) {
     setMarkingId(purchase_id);
     // cast as any — fixes TypeScript strict generic mismatch on payment_status enum
@@ -125,9 +211,15 @@ export default function PurchasesPage() {
             </p>
           )}
         </div>
-        <Button onClick={() => { reset(EMPTY); setModalOpen(true); }} className="gap-2">
-          <Plus className="h-4 w-4" /> Log Purchase
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setScannerOpen(true)} disabled={matching} className="gap-2">
+            {matching ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+            Scan Barcode
+          </Button>
+          <Button onClick={() => { reset(EMPTY); setModalOpen(true); }} className="gap-2">
+            <Plus className="h-4 w-4" /> Log Purchase
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -241,12 +333,17 @@ export default function PurchasesPage() {
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Product *</Label>
-                <Select value={watch("product_id")} onValueChange={(v) => setValue("product_id", v, { shouldValidate: true })}>
-                  <SelectTrigger><SelectValue placeholder="Select product…" /></SelectTrigger>
-                  <SelectContent>
-                    {products.map((p) => <SelectItem key={p.product_id} value={p.product_id}>{p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select value={watch("product_id")} onValueChange={(v) => setValue("product_id", v, { shouldValidate: true })}>
+                    <SelectTrigger className="flex-1"><SelectValue placeholder="Select product…" /></SelectTrigger>
+                    <SelectContent>
+                      {products.map((p) => <SelectItem key={p.product_id} value={p.product_id}>{p.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="icon" onClick={() => setScannerOpen(true)} title="Scan barcode instead">
+                    <ScanLine className="h-4 w-4" />
+                  </Button>
+                </div>
                 {errors.product_id && <p className="text-xs text-destructive">{errors.product_id.message}</p>}
               </div>
               <div className="col-span-2 space-y-1.5">
@@ -295,6 +392,19 @@ export default function PurchasesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onScan={handleScan}
+      />
+
+      <QuickAddProductDialog
+        open={quickAddOpen}
+        onOpenChange={setQuickAddOpen}
+        scannedBarcode={scannedBarcode}
+        onCreated={handleProductCreated}
+      />
     </div>
   );
 }

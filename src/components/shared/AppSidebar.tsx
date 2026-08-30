@@ -20,7 +20,19 @@ const NAV_ITEMS = [
   { href: "/settings",  label: "Settings",  icon: Settings },
 ] as const;
 
-const MOBILE_PRIMARY_HREFS = ["/dashboard", "/pos", "/inventory", "/udhaar", "/settings"];
+// FIX (Task 2): /purchases was missing from this list. NAV_ITEMS above drives
+// the desktop sidebar directly, but the mobile bottom bar renders only the
+// subset filtered through MOBILE_PRIMARY_HREFS — so a route can be fully
+// wired into the desktop nav and still be invisible on mobile, with no error
+// anywhere to catch it. That's exactly what was happening to Purchases.
+//
+// /expenses has the identical gap for the identical reason, but is
+// deliberately NOT added here: the bar is already going from 5 items to 6,
+// and adding both would push it to 7-across (~54px per item on a 375px-wide
+// screen), which risks label wrapping on smaller phones. Worth checking on
+// an actual device before deciding whether Expenses fits too or should sit
+// behind a "More" tab instead — flagging rather than deciding that silently.
+const MOBILE_PRIMARY_HREFS = ["/dashboard", "/pos", "/inventory", "/purchases", "/udhaar", "/settings"];
 
 export function AppSidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
