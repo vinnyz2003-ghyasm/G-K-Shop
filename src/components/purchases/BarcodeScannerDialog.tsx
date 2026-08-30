@@ -133,22 +133,32 @@ export function BarcodeScannerDialog({ open, onOpenChange, onScan, title = "Scan
           </DialogTitle>
         </DialogHeader>
 
-        {error ? (
-          <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <AlertCircle className="h-8 w-8 text-destructive" />
-            <p className="text-sm text-muted-foreground">{error}</p>
-          </div>
-        ) : (
-          <>
-            <div
-              id={SCANNER_ELEMENT_ID}
-              className="overflow-hidden rounded-lg border border-border bg-black"
-              style={{ minHeight: 220 }}
-            />
-            <p className="text-center text-xs text-muted-foreground">
-              {starting ? "Starting camera…" : "Point the camera at the barcode"}
-            </p>
-          </>
+        {/* BUG FIX: this div used to be conditionally removed from the DOM
+            whenever `error` was set, which raced against React's async state
+            updates — on a retry after a failed attempt, setError(null) below
+            hadn't actually re-rendered the div back into existence yet by
+            the time Html5Qrcode's constructor went looking for it, producing
+            "Element with id=barcode-scanner-viewport not found". Now the
+            div stays permanently mounted whenever the dialog is open, and
+            the error message layers on top of it instead of replacing it —
+            removing the race entirely rather than trying to out-time it. */}
+        <div className="relative">
+          <div
+            id={SCANNER_ELEMENT_ID}
+            className="overflow-hidden rounded-lg border border-border bg-black"
+            style={{ minHeight: 220 }}
+          />
+          {error && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-lg bg-card p-4 text-center">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="text-sm text-muted-foreground">{error}</p>
+            </div>
+          )}
+        </div>
+        {!error && (
+          <p className="text-center text-xs text-muted-foreground">
+            {starting ? "Starting camera…" : "Point the camera at the barcode"}
+          </p>
         )}
 
         {!error && !showManualEntry && (

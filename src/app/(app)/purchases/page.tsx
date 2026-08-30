@@ -14,8 +14,20 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { BarcodeScannerDialog } from "@/components/purchases/BarcodeScannerDialog";
-import { QuickAddProductDialog } from "@/components/purchases/QuickAddProductDialog";
+import dynamic from "next/dynamic";
+
+// Client-only: html5-qrcode touches browser-only APIs the moment it's
+// imported, which crashes Next.js's server-render pass on this page.
+// ssr:false keeps the whole module out of that pass entirely — it only
+// loads once the browser actually mounts it.
+const BarcodeScannerDialog = dynamic(
+  () => import("@/components/purchases/BarcodeScannerDialog").then((m) => m.BarcodeScannerDialog),
+  { ssr: false }
+);
+const QuickAddProductDialog = dynamic(
+  () => import("@/components/purchases/QuickAddProductDialog").then((m) => m.QuickAddProductDialog),
+  { ssr: false }
+);
 
 import { createClient } from "@/lib/supabase/client";
 import { formatINR } from "@/lib/utils/currency";
