@@ -40,13 +40,11 @@ export function BarcodeScannerDialog({ open, onOpenChange, onScan, title = "Scan
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(true);
 
-  // Manual fallback — not in the first draft. A scratched or low-contrast
-  // label on real kirana-shop packaging, or a phone whose camera permission
-  // is denied, shouldn't leave the person with no way to continue. Hidden by
-  // default so the primary flow still reads as "scan → done".
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualCode, setManualCode] = useState("");
 
+  // UPDATED FIX: Wrapping scanner initialization in a setTimeout so the Dialog 
+  // finishes mounting the DOM element before the camera tries to attach to it.
   useEffect(() => {
     if (!open) return;
 
@@ -56,62 +54,52 @@ export function BarcodeScannerDialog({ open, onOpenChange, onScan, title = "Scan
     setShowManualEntry(false);
     setManualCode("");
 
-    // Fresh instance every time the dialog opens — Html5Qrcode instances
-    // aren't meant to be reused across stop()/start() cycles reliably.
-    //
-    // NOTE: `verbose` is a required key on the library's Html5QrcodeFullConfig
-    // type (its VALUE type allows undefined, but the KEY itself isn't
-    // optional) — omitting it entirely, as the first draft did, does not
-    // type-check against the real installed html5-qrcode types. Confirmed
-    // directly against node_modules/html5-qrcode's .d.ts before fixing.
-    const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, {
-      formatsToSupport: RETAIL_BARCODE_FORMATS,
-      verbose: false,
-    });
-    scannerRef.current = scanner;
+    let scanner: Html5Qrcode | null = null;
 
-    scanner
-      .start(
-        { facingMode: "environment" }, // rear camera — front-facing makes no sense for scanning packaging
-        { fps: 10, qrbox: { width: 260, height: 160 } }, // wide/short box matches 1D barcode proportions
-        (decodedText) => {
-          // Fires on every successful decode while the camera keeps pointing
-          // at the code — guard so onScan only fires once per dialog session.
-          if (cancelled) return;
-          cancelled = true;
-          if (scanner.isScanning) {
-            scanner.stop().catch(() => {}).finally(() => scanner.clear());
-          }
-          onScan(decodedText);
-        },
-        () => {
-          // Per-frame "nothing decoded this frame" callback — fires
-          // continuously while aiming, not an error, deliberately ignored.
-        }
-      )
-      .then(() => { if (!cancelled) setStarting(false); })
-      .catch((err: any) => {
-        if (cancelled) return;
-        setStarting(false);
-        setShowManualEntry(true);
-        setError(
-          err?.name === "NotAllowedError" || String(err).includes("Permission")
-            ? "Camera access was denied. Allow camera permission for this site in your browser settings, then try again — or type the barcode in below."
-            : "Couldn't start the camera — make sure no other app or tab is using it, then try again, or type the barcode in below."
-        );
+    // 100ms delay gives the Dialog component enough time to mount the DOM elements
+    const initTimer = setTimeout(() => {
+      if (cancelled) return;
+
+      scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, {
+        formatsToSupport: RETAIL_BARCODE_FORMATS,
+        verbose: false,
       });
+      scannerRef.current = scanner;
+
+      scanner
+        .start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 260, height: 160 } },
+          (decodedText) => {
+            if (cancelled) return;
+            cancelled = true;
+            if (scanner?.isScanning) {
+              scanner.stop().catch(() => {}).finally(() => scanner?.clear());
+            }
+            onScan(decodedText);
+          },
+          () => {}
+        )
+        .then(() => { if (!cancelled) setStarting(false); })
+        .catch((err: any) => {
+          if (cancelled) return;
+          setStarting(false);
+          setShowManualEntry(true);
+          setError(
+            err?.name === "NotAllowedError" || String(err).includes("Permission")
+              ? "Camera access was denied. Allow camera permission for this site in your browser settings, then try again — or type the barcode in below."
+              : "Couldn't start the camera — make sure no other app or tab is using it, then try again, or type the barcode in below."
+          );
+        });
+    }, 100);
 
     return () => {
       cancelled = true;
-      // Only call stop() if the scanner actually reached a running state.
-      // html5-qrcode exposes `isScanning` for exactly this: calling stop()
-      // on an instance that never started (e.g. the dialog was closed the
-      // instant it opened, or a permission prompt was still pending) throws,
-      // and relying on .catch(() => {}) alone to swallow that isn't the same
-      // as confirming the camera stream is actually released.
-      if (scanner.isScanning) {
-        scanner.stop().catch(() => {}).finally(() => scanner.clear());
-      } else {
+      clearTimeout(initTimer); // Cancel the timeout if the dialog closes immediately
+      
+      if (scanner?.isScanning) {
+        scanner.stop().catch(() => {}).finally(() => scanner?.clear());
+      } else if (scanner) {
         scanner.clear();
       }
     };
@@ -133,32 +121,22 @@ export function BarcodeScannerDialog({ open, onOpenChange, onScan, title = "Scan
           </DialogTitle>
         </DialogHeader>
 
-        {/* BUG FIX: this div used to be conditionally removed from the DOM
-            whenever `error` was set, which raced against React's async state
-            updates — on a retry after a failed attempt, setError(null) below
-            hadn't actually re-rendered the div back into existence yet by
-            the time Html5Qrcode's constructor went looking for it, producing
-            "Element with id=barcode-scanner-viewport not found". Now the
-            div stays permanently mounted whenever the dialog is open, and
-            the error message layers on top of it instead of replacing it —
-            removing the race entirely rather than trying to out-time it. */}
-        <div className="relative">
-          <div
-            id={SCANNER_ELEMENT_ID}
-            className="overflow-hidden rounded-lg border border-border bg-black"
-            style={{ minHeight: 220 }}
-          />
-          {error && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-lg bg-card p-4 text-center">
-              <AlertCircle className="h-8 w-8 text-destructive" />
-              <p className="text-sm text-muted-foreground">{error}</p>
-            </div>
-          )}
-        </div>
-        {!error && (
-          <p className="text-center text-xs text-muted-foreground">
-            {starting ? "Starting camera…" : "Point the camera at the barcode"}
-          </p>
+        {error ? (
+          <div className="flex flex-col items-center gap-3 py-6 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </div>
+        ) : (
+          <>
+            <div
+              id={SCANNER_ELEMENT_ID}
+              className="overflow-hidden rounded-lg border border-border bg-black"
+              style={{ minHeight: 220 }}
+            />
+            <p className="text-center text-xs text-muted-foreground">
+              {starting ? "Starting camera…" : "Point the camera at the barcode"}
+            </p>
+          </>
         )}
 
         {!error && !showManualEntry && (
