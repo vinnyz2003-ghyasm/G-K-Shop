@@ -40,10 +40,10 @@ const EMPTY: ProductInput = {
 
 function StockBadge({ current, reorder }: { current: number; reorder: number }) {
   if (current <= 0)
-    return <Badge variant="destructive" className="gap-1"><AlertTriangle className="h-3 w-3" />Out</Badge>;
+    return <Badge variant="destructive" className="gap-1 px-2 py-0.5"><AlertTriangle className="h-3 w-3" />Out</Badge>;
   if (current <= reorder)
-    return <Badge variant="outline" className="gap-1 border-warning/40 bg-warning/10 text-warning"><AlertTriangle className="h-3 w-3" />Low</Badge>;
-  return <Badge variant="default" className="gap-1 bg-primary/20 text-primary"><CheckCircle className="h-3 w-3" />OK</Badge>;
+    return <Badge variant="outline" className="gap-1 border-warning/40 bg-warning/10 text-warning px-2 py-0.5"><AlertTriangle className="h-3 w-3" />Low</Badge>;
+  return <Badge variant="default" className="gap-1 bg-primary/20 text-primary px-2 py-0.5"><CheckCircle className="h-3 w-3" />OK</Badge>;
 }
 
 export default function InventoryPage() {
@@ -55,10 +55,6 @@ export default function InventoryPage() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // ── Delete flow state ──────────────────────────────────────────────────────
-  // deleteTarget holds the product currently staged for deletion (drives the
-  // confirmation modal). deletingId tracks which row's delete request is
-  // in flight, so only that row's button shows a spinner.
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -115,8 +111,6 @@ export default function InventoryPage() {
       return;
     }
 
-    // Update local state directly instead of a full reload — keeps the table
-    // responsive and matches the "no refresh needed" pattern used for delete.
     if (editing) {
       setProducts((prev) => prev.map((p) => (p.product_id === editing.product_id ? data : p)));
       toast.success("Product updated");
@@ -136,29 +130,16 @@ export default function InventoryPage() {
     toast.success(p.is_active ? "Product deactivated" : "Product reactivated");
   }
 
-  // ── Delete handlers ─────────────────────────────────────────────────────────
-  // Step 1: row's trash icon → stage the product and open the shared modal.
   function requestDelete(p: Product) {
     setDeleteTarget(p);
   }
 
-  // Step 2: modal confirm → call Supabase, then update local state so the row
-  // disappears instantly. No full-page reload or refetch is needed for this
-  // to reflect everywhere the products list is rendered on this page.
-  //
-  // NOTE ON OFFLINE: unlike Sales/Purchases/Expenses, Products was never
-  // wired into the offline outbox — Add/Edit above (`onSubmit`) already call
-  // Supabase directly too, and there's no client_uuid column on this table
-  // for the outbox's upsert-on-conflict replay to key off. So rather than
-  // make Delete offline-capable while Add/Edit still aren't (a new, worse
-  // inconsistency), this just fails clearly instead of with a generic
-  // network-error toast — matching how the rest of Inventory already works.
   async function confirmDelete() {
     if (!deleteTarget) return;
     const target = deleteTarget;
 
     if (!navigator.onLine) {
-      toast.error(`Can't delete "${target.name}" — Inventory needs an internet connection (it isn't queued for offline sync like Sales/Expenses are).`);
+      toast.error(`Can't delete "${target.name}" — Inventory requires an active connection.`);
       setDeleteTarget(null);
       return;
     }
@@ -173,9 +154,6 @@ export default function InventoryPage() {
     setDeleteTarget(null);
 
     if (error) {
-      // Foreign key constraints (sale_items / purchases referencing this
-      // product) are the most likely failure — surface that plainly rather
-      // than a raw Postgres error string.
       if (error.code === "23503") {
         toast.error(`Can't delete "${target.name}" — it has sales or purchase history. Deactivate it instead.`);
       } else {
@@ -209,11 +187,11 @@ export default function InventoryPage() {
           <p className="text-sm text-muted-foreground">
             {products.filter((p) => p.is_active).length} active SKUs
             {lowStockCount > 0 && (
-              <span className="ml-2 text-destructive">· {lowStockCount} need restocking</span>
+              <span className="ml-2 text-destructive font-medium">· {lowStockCount} restock alerts</span>
             )}
           </p>
         </div>
-        <Button onClick={openAdd} className="gap-2">
+        <Button onClick={openAdd} className="gap-2 min-h-[44px]">
           <Plus className="h-4 w-4" /> Add Product
         </Button>
       </div>
@@ -224,13 +202,13 @@ export default function InventoryPage() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by name, barcode, or ID…"
-            className="pl-9"
+            className="pl-9 min-h-[44px] text-base"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-full sm:w-52">
+          <SelectTrigger className="w-full sm:w-52 min-h-[44px] text-base">
             <SelectValue placeholder="All Categories" />
           </SelectTrigger>
           <SelectContent>
@@ -240,105 +218,211 @@ export default function InventoryPage() {
         </Select>
       </div>
 
-      {/* Table */}
+      {/* Main Content Area */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3">Product</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3 text-right">Cost</th>
-                  <th className="px-4 py-3 text-right">Price</th>
-                  <th className="px-4 py-3 text-right">Margin</th>
-                  <th className="px-4 py-3 text-right">Stock</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={8} />)
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-16 text-center text-muted-foreground">
-                      <div className="flex flex-col items-center gap-2">
-                        <PackageSearch className="h-8 w-8" />
-                        <p className="text-sm">
-                          {query || categoryFilter !== "all"
-                            ? "No products match your filters"
-                            : "No products yet — add one above"}
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((p) => (
-                    <tr
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+              <PackageSearch className="h-8 w-8 opacity-40" />
+              <p className="text-sm">
+                {query || categoryFilter !== "all"
+                  ? "No products match your filters"
+                  : "No products yet — add one above"}
+              </p>
+            </div>
+          ) : (
+            <div className="w-full">
+              {/* MOBILE VIEW: Touch-friendly stacked cards (< 768px) */}
+              <div className="grid grid-cols-1 gap-3 p-3 md:hidden">
+                {filtered.map((p) => {
+                  const cost = Number(p.cost_price) || 0;
+                  const price = Number(p.selling_price) || 0;
+                  const margin = price > 0 ? ((price - cost) / price) * 100 : 0;
+                  return (
+                    <div
                       key={p.product_id}
                       className={cn(
-                        "border-b border-border/50 transition-colors hover:bg-muted/40",
-                        !p.is_active && "opacity-50",
-                        deletingId === p.product_id && "opacity-40"
+                        "flex flex-col rounded-xl border p-4 shadow-sm transition-colors",
+                        !p.is_active && "opacity-60 bg-muted/20",
+                        deletingId === p.product_id && "opacity-40",
+                        p.is_active ? "bg-card border-border" : "border-border/50"
                       )}
                     >
-                      <td className="px-4 py-3">
-                        <p className="font-medium">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {p.product_id}{p.upc_barcode ? ` · ${p.upc_barcode}` : ""}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{p.category}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.cost_price)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.selling_price)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums text-primary">
-                        {(p.margin_percentage ?? 0).toFixed(1)}%
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex flex-col items-end gap-1">
-                          <span className="tabular-nums font-medium">{p.current_stock} {p.unit}</span>
-                          <StockBadge current={p.current_stock} reorder={p.reorder_level} />
+                      {/* Name, SKU, Category */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-base leading-tight">{p.name}</span>
+                          <span className="text-xs text-muted-foreground mt-1">
+                            {p.product_id}{p.upc_barcode ? ` · ${p.upc_barcode}` : ""}
+                          </span>
                         </div>
-                      </td>
-                      <td className="px-4 py-3 text-center">
+                        <Badge variant="secondary" className="text-xs font-normal shrink-0">
+                          {p.category}
+                        </Badge>
+                      </div>
+
+                      {/* Pricing, Margin, Stock */}
+                      <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-muted/40 p-2.5 text-xs">
+                        <div>
+                          <span className="text-muted-foreground block">Selling Price</span>
+                          <span className="font-bold text-sm text-foreground tabular-nums">{formatINR(p.selling_price)}</span>
+                          <span className="text-[11px] text-primary block mt-0.5 font-medium">
+                            Margin: {margin.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="text-right flex flex-col items-end justify-center">
+                          <span className="text-muted-foreground block">Current Stock</span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="font-semibold text-sm tabular-nums">{p.current_stock} {p.unit}</span>
+                            <StockBadge current={p.current_stock} reorder={p.reorder_level} />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Action Row */}
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
                         <button
+                          type="button"
                           onClick={() => void toggleActive(p)}
-                          title={p.is_active ? "Deactivate" : "Reactivate"}
-                          className="text-muted-foreground hover:text-foreground"
+                          aria-label={p.is_active ? `Deactivate ${p.name}` : `Reactivate ${p.name}`}
+                          className="flex items-center gap-2 min-h-[44px] text-xs text-muted-foreground hover:text-foreground active:scale-95 transition-transform"
                         >
-                          {p.is_active
-                            ? <ToggleRight className="h-5 w-5 text-primary" />
-                            : <ToggleLeft className="h-5 w-5" />}
+                          {p.is_active ? (
+                            <>
+                              <ToggleRight className="h-6 w-6 text-primary" />
+                              <span className="font-medium text-foreground">Active</span>
+                            </>
+                          ) : (
+                            <>
+                              <ToggleLeft className="h-6 w-6 text-muted-foreground" />
+                              <span>Inactive</span>
+                            </>
+                          )}
                         </button>
-                      </td>
-                      <td className="px-4 py-3">
-                        {/* Standardized action button group — same size, gap,
-                            and hover treatment used in Expenses/Purchases rows */}
-                        <div className="flex items-center justify-end gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => openEdit(p)} title="Edit">
+
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openEdit(p)}
+                            aria-label={`Edit ${p.name}`}
+                            className="min-h-[44px] px-3.5 gap-1.5 text-xs"
+                          >
                             <Pencil className="h-3.5 w-3.5" />
+                            Edit
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => requestDelete(p)}
                             disabled={deletingId === p.product_id}
-                            title="Delete"
-                            className="hover:bg-destructive/10 hover:text-destructive"
+                            aria-label={`Delete ${p.name}`}
+                            className="min-h-[44px] min-w-[44px] p-0 hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
                           >
-                            {deletingId === p.product_id
-                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              : <Trash2 className="h-3.5 w-3.5" />}
+                            {deletingId === p.product_id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
                           </Button>
                         </div>
-                      </td>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* DESKTOP VIEW: Full Data Table (>= 768px) */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">
+                      <th className="px-4 py-3">Product</th>
+                      <th className="px-4 py-3">Category</th>
+                      <th className="px-4 py-3 text-right">Cost</th>
+                      <th className="px-4 py-3 text-right">Price</th>
+                      <th className="px-4 py-3 text-right">Margin</th>
+                      <th className="px-4 py-3 text-right">Stock</th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {filtered.map((p) => (
+                      <tr
+                        key={p.product_id}
+                        className={cn(
+                          "border-b border-border/50 transition-colors hover:bg-muted/40",
+                          !p.is_active && "opacity-50",
+                          deletingId === p.product_id && "opacity-40"
+                        )}
+                      >
+                        <td className="px-4 py-3">
+                          <p className="font-medium">{p.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {p.product_id}{p.upc_barcode ? ` · ${p.upc_barcode}` : ""}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">{p.category}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.cost_price)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.selling_price)}</td>
+                        <td className="px-4 py-3 text-right tabular-nums text-primary">
+                          {(p.margin_percentage ?? 0).toFixed(1)}%
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex flex-col items-end gap-1">
+                            <span className="tabular-nums font-medium">{p.current_stock} {p.unit}</span>
+                            <StockBadge current={p.current_stock} reorder={p.reorder_level} />
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => void toggleActive(p)}
+                            aria-label={p.is_active ? `Deactivate ${p.name}` : `Reactivate ${p.name}`}
+                            className="p-1 text-muted-foreground hover:text-foreground inline-flex items-center justify-center min-h-[36px] min-w-[36px]"
+                          >
+                            {p.is_active
+                              ? <ToggleRight className="h-5 w-5 text-primary" />
+                              : <ToggleLeft className="h-5 w-5" />}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openEdit(p)}
+                              aria-label={`Edit ${p.name}`}
+                              className="min-h-[36px] min-w-[36px] p-0"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => requestDelete(p)}
+                              disabled={deletingId === p.product_id}
+                              aria-label={`Delete ${p.name}`}
+                              className="min-h-[36px] min-w-[36px] p-0 hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              {deletingId === p.product_id
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <Trash2 className="h-3.5 w-3.5" />}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -352,24 +436,24 @@ export default function InventoryPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Product ID *</Label>
-                <Input placeholder="e.g. P017" {...register("product_id")} disabled={!!editing} />
+                <Input placeholder="e.g. P017" className="min-h-[44px] text-base" {...register("product_id")} disabled={!!editing} />
                 {errors.product_id && <p className="text-xs text-destructive">{errors.product_id.message}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>UPC / Barcode</Label>
-                <Input placeholder="(optional)" {...register("upc_barcode")} />
+                <Input placeholder="(optional)" inputMode="numeric" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("upc_barcode")} />
               </div>
 
               <div className="col-span-2 space-y-1.5">
                 <Label>Product Name *</Label>
-                <Input placeholder="e.g. Basmati Rice Premium 1Kg" {...register("name")} />
+                <Input placeholder="e.g. Basmati Rice Premium 1Kg" className="min-h-[44px] text-base" {...register("name")} />
                 {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
               </div>
 
               <div className="space-y-1.5">
                 <Label>Category *</Label>
                 <Select value={watch("category")} onValueChange={(v) => setValue("category", v, { shouldValidate: true })}>
-                  <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+                  <SelectTrigger className="min-h-[44px] text-base"><SelectValue placeholder="Select…" /></SelectTrigger>
                   <SelectContent>
                     {CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
@@ -379,21 +463,22 @@ export default function InventoryPage() {
               <div className="space-y-1.5">
                 <Label>Unit *</Label>
                 <Select value={watch("unit")} onValueChange={(v) => setValue("unit", v, { shouldValidate: true })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="min-h-[44px] text-base"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {errors.unit && <p className="text-xs text-destructive">{errors.unit.message}</p>}
               </div>
 
               <div className="space-y-1.5">
                 <Label>Cost Price (₹) *</Label>
-                <Input type="number" step="0.01" min="0" {...register("cost_price")} />
+                <Input type="text" inputMode="decimal" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("cost_price")} />
                 {errors.cost_price && <p className="text-xs text-destructive">{errors.cost_price.message}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Selling Price (₹) *</Label>
-                <Input type="number" step="0.01" min="0" {...register("selling_price")} />
+                <Input type="text" inputMode="decimal" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("selling_price")} />
                 {errors.selling_price && <p className="text-xs text-destructive">{errors.selling_price.message}</p>}
               </div>
 
@@ -414,17 +499,17 @@ export default function InventoryPage() {
 
               <div className="space-y-1.5">
                 <Label>Reorder Level</Label>
-                <Input type="number" min="0" {...register("reorder_level")} />
+                <Input type="text" inputMode="numeric" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("reorder_level")} />
               </div>
               <div className="space-y-1.5">
                 <Label>Current Stock</Label>
-                <Input type="number" min="0" {...register("current_stock")} />
+                <Input type="text" inputMode="numeric" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("current_stock")} />
               </div>
             </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving} className="gap-2">
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="outline" className="min-h-[44px]" onClick={() => setModalOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={saving} className="gap-2 min-h-[44px]">
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 {editing ? "Save Changes" : "Add Product"}
               </Button>
@@ -433,7 +518,7 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Shared delete confirmation modal */}
+      {/* Delete confirmation modal */}
       <ConfirmDeleteDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
