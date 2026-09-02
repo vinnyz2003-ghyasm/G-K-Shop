@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Plus, Search, CheckCircle, Loader2, Truck, AlertCircle, ScanLine } from "lucide-react";
+import { Plus, Search, CheckCircle, Loader2, Truck, AlertCircle, ScanLine, Receipt } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,9 +16,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import dynamic from "next/dynamic";
 
-// PERFORMANCE FIX: Added a loading fallback so Next.js securely lazy-loads 
-// the heavy camera module ONLY when the user clicks the scan button, 
-// completely eliminating the 4.5s Total Blocking Time (TBT) on mobile.
 const BarcodeScannerDialog = dynamic(
   () => import("@/components/purchases/BarcodeScannerDialog").then((m) => m.BarcodeScannerDialog),
   { 
@@ -202,13 +199,12 @@ export default function PurchasesPage() {
           )}
         </div>
         <div className="flex gap-2">
-          {/* ACCESSIBILITY FIX: Added min-h-[44px] to ensure buttons are large enough for touch screens */}
           <Button variant="outline" onClick={() => setScannerOpen(true)} disabled={matching} className="gap-2 min-h-[44px]">
             {matching ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
-            Scan Barcode
+            <span className="hidden sm:inline">Scan</span>
           </Button>
           <Button onClick={() => { reset(EMPTY); setModalOpen(true); }} className="gap-2 min-h-[44px]">
-            <Plus className="h-4 w-4" /> Log Purchase
+            <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Log Purchase</span>
           </Button>
         </div>
       </div>
@@ -231,7 +227,6 @@ export default function PurchasesPage() {
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          {/* ACCESSIBILITY FIX: text-base (16px) prevents iOS Safari zoom on tap, min-h-[44px] for tap target */}
           <Input placeholder="Search product or supplier…" className="pl-9 min-h-[44px] text-base" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
@@ -250,64 +245,109 @@ export default function PurchasesPage() {
             <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
-              <Truck className="h-8 w-8" />
+              <Receipt className="h-8 w-8 opacity-20" />
               <p className="text-sm">No purchases found</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium">Product</th>
-                    <th className="px-4 py-3 font-medium">Supplier</th>
-                    <th className="px-4 py-3 font-medium text-right">Qty</th>
-                    <th className="px-4 py-3 font-medium text-right">Unit Cost</th>
-                    <th className="px-4 py-3 font-medium text-right">Total</th>
-                    <th className="px-4 py-3 font-medium text-center">Status</th>
-                    <th className="px-4 py-3 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((p) => {
-                    const prod = productMap[p.product_id];
-                    const isPending = p.payment_status === "Pending";
-                    return (
-                      <tr key={p.purchase_id} className={cn(
-                        "border-b border-border/50 transition-colors",
-                        isPending ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/40"
-                      )}>
-                        <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDateDisplay(p.purchase_date)}</td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium">{prod?.name ?? p.product_id}</p>
-                          <p className="text-xs text-muted-foreground">{p.product_id}</p>
-                        </td>
-                        <td className="px-4 py-3">{p.supplier_name}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{p.qty} {prod?.unit ?? ""}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.unit_cost)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums font-medium">{formatINR(p.total_amount ?? 0)}</td>
-                        <td className="px-4 py-3 text-center">
-                          {isPending
-                            ? <Badge variant="destructive">Pending</Badge>
-                            : <Badge className="bg-primary/20 text-primary">Paid</Badge>}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {isPending && (
-                            <Button size="sm" variant="outline" className="gap-1.5 text-xs min-h-[44px]"
-                              disabled={markingId === p.purchase_id}
-                              onClick={() => void markPaid(p.purchase_id)}>
-                              {markingId === p.purchase_id
-                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : <CheckCircle className="h-3 w-3" />}
-                              Mark Paid
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="w-full">
+              {/* MOBILE VIEW: Rendered as compact, touch-friendly cards */}
+              <div className="grid grid-cols-1 gap-3 p-3 md:hidden">
+                {filtered.map((p) => {
+                  const prod = productMap[p.product_id];
+                  const isPending = p.payment_status === "Pending";
+                  return (
+                    <div key={p.purchase_id} className={cn(
+                      "flex flex-col rounded-xl border p-4 shadow-sm transition-colors",
+                      isPending ? "bg-destructive/5 border-destructive/20" : "bg-card border-border"
+                    )}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-base leading-tight">{prod?.name ?? p.product_id}</span>
+                          <span className="text-xs text-muted-foreground mt-1">{p.supplier_name}</span>
+                        </div>
+                        <div className="flex flex-col items-end text-right">
+                          <span className="font-bold text-base text-foreground tabular-nums">{formatINR(p.total_amount ?? 0)}</span>
+                          <span className="text-xs text-muted-foreground mt-1">{formatDateDisplay(p.purchase_date)}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
+                        <div className="flex items-center gap-3">
+                          {isPending ? <Badge variant="destructive" className="px-2.5 py-0.5">Pending</Badge> : <Badge className="bg-primary/20 text-primary px-2.5 py-0.5">Paid</Badge>}
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {p.qty} {prod?.unit ?? ""} @ {formatINR(p.unit_cost)}
+                          </span>
+                        </div>
+                        {isPending && (
+                          <Button size="sm" variant="outline" className="gap-1.5 h-8 px-3 text-xs"
+                            disabled={markingId === p.purchase_id}
+                            onClick={() => void markPaid(p.purchase_id)}>
+                            {markingId === p.purchase_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3 text-emerald-500" />}
+                            Pay
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* DESKTOP VIEW: Standard Table Format */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-muted-foreground bg-muted/30">
+                      <th className="px-4 py-3 font-medium">Date</th>
+                      <th className="px-4 py-3 font-medium">Product</th>
+                      <th className="px-4 py-3 font-medium">Supplier</th>
+                      <th className="px-4 py-3 font-medium text-right">Qty</th>
+                      <th className="px-4 py-3 font-medium text-right">Unit Cost</th>
+                      <th className="px-4 py-3 font-medium text-right">Total</th>
+                      <th className="px-4 py-3 font-medium text-center">Status</th>
+                      <th className="px-4 py-3 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((p) => {
+                      const prod = productMap[p.product_id];
+                      const isPending = p.payment_status === "Pending";
+                      return (
+                        <tr key={p.purchase_id} className={cn(
+                          "border-b border-border/50 transition-colors",
+                          isPending ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/40"
+                        )}>
+                          <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDateDisplay(p.purchase_date)}</td>
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-base md:text-sm">{prod?.name ?? p.product_id}</p>
+                            <p className="text-xs text-muted-foreground">{p.product_id}</p>
+                          </td>
+                          <td className="px-4 py-3">{p.supplier_name}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-medium">{p.qty} <span className="font-normal text-muted-foreground">{prod?.unit ?? ""}</span></td>
+                          <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.unit_cost)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-bold">{formatINR(p.total_amount ?? 0)}</td>
+                          <td className="px-4 py-3 text-center">
+                            {isPending
+                              ? <Badge variant="destructive">Pending</Badge>
+                              : <Badge className="bg-primary/20 text-primary">Paid</Badge>}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {isPending && (
+                              <Button size="sm" variant="outline" className="gap-1.5 text-xs min-h-[44px] md:min-h-0"
+                                disabled={markingId === p.purchase_id}
+                                onClick={() => void markPaid(p.purchase_id)}>
+                                {markingId === p.purchase_id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <CheckCircle className="h-3 w-3 text-emerald-500" />}
+                                Mark Paid
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </CardContent>
@@ -332,7 +372,6 @@ export default function PurchasesPage() {
                       {products.map((p) => <SelectItem key={p.product_id} value={p.product_id}>{p.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  {/* ACCESSIBILITY FIX: Added aria-label to this icon-only button to satisfy Lighthouse Screen Reader audit */}
                   <Button type="button" variant="outline" size="icon" aria-label="Scan barcode" onClick={() => setScannerOpen(true)} title="Scan barcode instead" className="min-h-[44px] min-w-[44px]">
                     <ScanLine className="h-4 w-4" />
                   </Button>
@@ -347,7 +386,6 @@ export default function PurchasesPage() {
               
               <div className="space-y-1.5">
                 <Label>Quantity *</Label>
-                {/* UX FIX: Switched from type="number" to type="text" + inputMode="decimal" to force the large mobile numpad */}
                 <Input type="text" inputMode="decimal" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("qty")} />
                 {errors.qty && <p className="text-xs text-destructive">{errors.qty.message}</p>}
               </div>
@@ -359,7 +397,7 @@ export default function PurchasesPage() {
 
               <div className="col-span-2 flex justify-between rounded-md bg-muted px-4 py-2 text-xs">
                 <span className="text-muted-foreground">Invoice Total</span>
-                <span className="font-semibold tabular-nums">
+                <span className="font-semibold tabular-nums text-base">
                   {formatINR((Number(watch("qty")) || 0) * (Number(watch("unit_cost")) || 0))}
                 </span>
               </div>
@@ -389,7 +427,6 @@ export default function PurchasesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Renders safely through dynamic import when requested */}
       <BarcodeScannerDialog
         open={scannerOpen}
         onOpenChange={setScannerOpen}
