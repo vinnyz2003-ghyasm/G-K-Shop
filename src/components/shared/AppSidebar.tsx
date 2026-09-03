@@ -20,19 +20,10 @@ const NAV_ITEMS = [
   { href: "/settings",  label: "Settings",  icon: Settings },
 ] as const;
 
-// FIX (Task 2): /purchases was missing from this list. NAV_ITEMS above drives
-// the desktop sidebar directly, but the mobile bottom bar renders only the
-// subset filtered through MOBILE_PRIMARY_HREFS — so a route can be fully
-// wired into the desktop nav and still be invisible on mobile, with no error
-// anywhere to catch it. That's exactly what was happening to Purchases.
-//
-// /expenses has the identical gap for the identical reason, but is
-// deliberately NOT added here: the bar is already going from 5 items to 6,
-// and adding both would push it to 7-across (~54px per item on a 375px-wide
-// screen), which risks label wrapping on smaller phones. Worth checking on
-// an actual device before deciding whether Expenses fits too or should sit
-// behind a "More" tab instead — flagging rather than deciding that silently.
-const MOBILE_PRIMARY_HREFS = ["/dashboard", "/pos", "/inventory", "/purchases", "/udhaar", "/settings"];
+// Added "/expenses" to the mobile array. Since 7 items is a tight fit on 
+// smaller screens (like older iPhones), the bottom <nav> has been updated
+// with overflow-x-auto so it stays readable and allows a smooth swipe.
+const MOBILE_PRIMARY_HREFS = ["/dashboard", "/pos", "/inventory", "/purchases", "/expenses", "/udhaar", "/settings"];
 
 export function AppSidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -100,7 +91,8 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
         <main className="flex-1 px-4 py-5 pb-24 md:pb-8">{children}</main>
 
         {/* Mobile bottom tab bar */}
-        <nav className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border bg-card/95 backdrop-blur md:hidden">
+        {/* Added overflow-x-auto and scrollbar-hiding utilities to handle 7 tabs gracefully */}
+        <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-border bg-card/95 backdrop-blur md:hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
           {NAV_ITEMS.filter((i) => MOBILE_PRIMARY_HREFS.includes(i.href)).map((item) => {
             const active = pathname?.startsWith(item.href);
             return (
@@ -108,12 +100,12 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-1 flex-col items-center gap-1 py-3 text-[10px] font-medium transition-colors",
+                  "flex min-w-[64px] flex-1 flex-col items-center gap-1 px-1 py-3 text-[10px] font-medium transition-colors relative",
                   active ? "text-primary" : "text-muted-foreground"
                 )}
               >
                 <item.icon className={cn("h-5 w-5", active && "drop-shadow-sm")} />
-                {item.label}
+                <span className="truncate w-full text-center">{item.label}</span>
                 {active && (
                   <span className="absolute bottom-0 h-0.5 w-8 rounded-full bg-primary" />
                 )}
