@@ -1,83 +1,54 @@
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { DashboardClient } from "@/components/dashboard/DashboardClient";
-import type { DashboardData, FilteredPnl } from "@/hooks/useDashboardData";
+import { ArrowUpRight, Wallet, Activity } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { formatINR } from "@/lib/utils/currency";
 
-export const revalidate = 0; // always fresh — this is a live operational dashboard
+export function DashboardHero({ netProfit = 12450, grossRevenue = 45000, trend = "+12.5%" }) {
+  return (
+    <div className="mb-6 space-y-4">
+      {/* Primary Hero Card */}
+      <Card className="relative overflow-hidden border-emerald-900/30 bg-gradient-to-br from-emerald-950/40 via-slate-900 to-slate-950 shadow-lg shadow-emerald-900/10 backdrop-blur-xl">
+        {/* Abstract Background Elements */}
+        <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-emerald-600/10 blur-3xl" />
+        
+        <CardContent className="relative flex flex-col p-6">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-emerald-400/80">
+              <Activity className="h-4 w-4" /> Net Profit
+            </span>
+            <div className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+              <ArrowUpRight className="h-3 w-3" />
+              {trend}
+            </div>
+          </div>
+          
+          <div className="mt-4 flex items-baseline gap-2">
+            <h2 className="text-4xl font-bold tracking-tighter text-white tabular-nums sm:text-5xl">
+              {formatINR(netProfit)}
+            </h2>
+          </div>
 
-const EMPTY_PNL: FilteredPnl = {
-  cash: 0, upi: 0, credit: 0, gross_revenue: 0,
-  cogs: 0, total_expenses: 0, active_credit: 0,
-  net_profit: 0, sale_count: 0,
-};
-
-interface RawPnlRow {
-  cash: number | string | null;
-  upi: number | string | null;
-  credit: number | string | null;
-  gross_revenue: number | string | null;
-  cogs: number | string | null;
-  total_expenses: number | string | null;
-  active_credit: number | string | null;
-  net_profit: number | string | null;
-  sale_count: number | string | bigint | null;
-}
-
-// FIX 1: We calculate the default 30-day range directly on the server to completely 
-// avoid importing functions from a "use client" file (which caused the crash).
-function getInitialServerDateRange() {
-  const today = new Date();
-  const pastDate = new Date();
-  pastDate.setDate(today.getDate() - 30);
-  
-  // Format as YYYY-MM-DD
-  return {
-    from: pastDate.toISOString().split('T')[0],
-    to: today.toISOString().split('T')[0]
-  };
-}
-
-async function getInitialDashboardData(): Promise<DashboardData> {
-  const supabase = createServerSupabaseClient();
-  const { from, to } = getInitialServerDateRange();
-
-  const [pnlRes, alertsRes, dailyRes] = await Promise.all([
-    (supabase.rpc as any)("fn_filtered_pnl", { p_from: from, p_to: to }) as Promise<{
-      data: RawPnlRow[] | null;
-      error: { message: string } | null;
-    }>,
-    supabase.from("v_low_stock_alerts").select("*"),
-    supabase.from("v_daily_sales_vs_expenses").select("*").order("day", { ascending: true }),
-  ]);
-
-  const pnlRow = pnlRes.data?.[0];
-  
-  // FIX 2: Retain the strict Number() casting to prevent BigInt RSC serialization errors
-  const pnl: FilteredPnl = pnlRow
-    ? {
-        cash: Number(pnlRow.cash ?? 0),
-        upi: Number(pnlRow.upi ?? 0),
-        credit: Number(pnlRow.credit ?? 0),
-        gross_revenue: Number(pnlRow.gross_revenue ?? 0),
-        cogs: Number(pnlRow.cogs ?? 0),
-        total_expenses: Number(pnlRow.total_expenses ?? 0),
-        active_credit: Number(pnlRow.active_credit ?? 0),
-        net_profit: Number(pnlRow.net_profit ?? 0),
-        sale_count: Number(pnlRow.sale_count ?? 0),
-      }
-    : EMPTY_PNL;
-
-  // FIX 3: Retain pure JS array mapping to safely bypass Next.js caching layers
-  const safeAlerts = (alertsRes.data || []).map((item: any) => ({ ...item }));
-  const safeDaily = (dailyRes.data || []).map((item: any) => ({ ...item }));
-
-  return {
-    pnl,
-    alerts: safeAlerts,
-    daily: safeDaily,
-  };
-}
-
-export default async function DashboardPage() {
-  const initialData = await getInitialDashboardData();
-  return <DashboardClient initialData={initialData} />;
+          <div className="mt-6 flex items-center justify-between border-t border-white/5 pt-4">
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground">Gross Revenue</span>
+              <span className="text-sm font-medium tabular-nums text-slate-300">
+                {formatINR(grossRevenue)}
+              </span>
+            </div>
+            
+            {/* Payment Split - Inline mini-stats */}
+            <div className="flex gap-4 text-right">
+              <div className="flex flex-col">
+                <span className="text-[10px] uppercase text-muted-foreground">Cash</span>
+                <span className="text-xs font-medium tabular-nums text-emerald-200">₹8,000</span>
+              </div>
+              <div className="flex flex-col border-l border-white/10 pl-4">
+                <span className="text-[10px] uppercase text-muted-foreground">Online</span>
+                <span className="text-xs font-medium tabular-nums text-blue-300">₹37,000</span>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
