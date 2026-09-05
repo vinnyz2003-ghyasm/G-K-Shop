@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Store, Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
+import { BrandMark } from "@/components/shared/BrandMark";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -45,7 +46,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 ring-1 ring-primary/30">
-            <Store className="h-7 w-7 text-primary" />
+            <BrandMark className="h-7 w-7 text-primary" />
           </div>
           <div className="text-center">
             <h1 className="text-2xl font-bold tracking-tight text-foreground">G&K Shop Tracker</h1>

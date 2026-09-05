@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Plus, Loader2, BookText, ChevronDown, ChevronRight, Phone, UserPlus } from "lucide-react";
+import { Plus, Loader2, ChevronDown, ChevronRight, Phone, UserPlus } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { KhataBookIllustration } from "@/components/shared/ShopIllustrations";
 
 import { createClient } from "@/lib/supabase/client";
 import { formatINR } from "@/lib/utils/currency";
@@ -147,9 +148,9 @@ export default function UdhaarPage() {
         <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : balances.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
-            <BookText className="h-8 w-8" />
-            <p className="text-sm">No credit customers yet. Add a customer above, or log a credit sale from New Sale.</p>
+          <CardContent className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
+            <KhataBookIllustration className="h-24 w-24" />
+            <p className="max-w-[220px] text-center text-sm">No credit customers yet. Add a customer above, or log a credit sale from New Sale.</p>
           </CardContent>
         </Card>
       ) : (

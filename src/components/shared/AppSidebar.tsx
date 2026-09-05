@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, ScanLine, Boxes, Truck,
-  Receipt, BookText, Settings, Store, LogOut,
+  Receipt, BookText, Settings, LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { BrandMark } from "./BrandMark";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -20,10 +21,11 @@ const NAV_ITEMS = [
   { href: "/settings",  label: "Settings",  icon: Settings },
 ] as const;
 
-// Added "/expenses" to the mobile array. Since 7 items is a tight fit on 
-// smaller screens (like older iPhones), the bottom <nav> has been updated
-// with overflow-x-auto so it stays readable and allows a smooth swipe.
-const MOBILE_PRIMARY_HREFS = ["/dashboard", "/pos", "/inventory", "/purchases", "/expenses", "/udhaar", "/settings"];
+const MOBILE_PRIMARY_HREFS = ["/dashboard", "/pos", "/inventory", "/udhaar", "/settings"];
+// "/pos" (New Sale) sits in the middle of the 5 mobile tabs — perfect spot to
+// raise it into a floating action button, since ringing up a sale is the
+// single most frequent action at the counter.
+const MOBILE_FAB_HREF = "/pos";
 
 export function AppSidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -44,7 +46,7 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
         {/* Logo area */}
         <div className="flex items-center gap-2.5 border-b border-border px-4 py-5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15">
-            <Store className="h-4 w-4 text-primary" />
+            <BrandMark className="h-4 w-4 text-primary" />
           </div>
           <span className="font-bold tracking-tight text-foreground">G&K Shop Tracker</span>
         </div>
@@ -88,27 +90,51 @@ export function AppSidebar({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <div className="flex flex-1 flex-col">
-        <main className="flex-1 px-4 py-5 pb-24 md:pb-8">{children}</main>
+        <main className="flex-1 px-4 py-5 pb-28 md:pb-8">{children}</main>
 
         {/* Mobile bottom tab bar */}
-        {/* Added overflow-x-auto and scrollbar-hiding utilities to handle 7 tabs gracefully */}
-        <nav className="fixed inset-x-0 bottom-0 z-40 flex overflow-x-auto border-t border-border bg-card/95 backdrop-blur md:hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+        <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-between border-t border-border bg-card/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
           {NAV_ITEMS.filter((i) => MOBILE_PRIMARY_HREFS.includes(i.href)).map((item) => {
             const active = pathname?.startsWith(item.href);
+
+            // "New Sale" is raised into a floating action button — the
+            // highest-frequency action at the counter gets the most
+            // prominent target, like a camera shutter button sitting apart
+            // from the rest of a photo app's tab bar.
+            if (item.href === MOBILE_FAB_HREF) {
+              return (
+                <Link key={item.href} href={item.href} className="flex flex-1 flex-col items-center">
+                  <span
+                    className={cn(
+                      "-mt-7 flex h-14 w-14 items-center justify-center rounded-full",
+                      "bg-primary text-primary-foreground shadow-lg shadow-primary/30",
+                      "ring-4 ring-background transition-transform active:scale-95"
+                    )}
+                  >
+                    <item.icon className="h-6 w-6" strokeWidth={2.25} />
+                  </span>
+                  <span className="mt-1 pb-2 text-[10px] font-medium text-primary">{item.label}</span>
+                </Link>
+              );
+            }
+
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={cn(
-                  "flex min-w-[64px] flex-1 flex-col items-center gap-1 px-1 py-3 text-[10px] font-medium transition-colors relative",
-                  active ? "text-primary" : "text-muted-foreground"
-                )}
+                className="flex min-h-[60px] flex-1 flex-col items-center justify-center gap-1 py-2 transition-transform active:scale-95"
               >
-                <item.icon className={cn("h-5 w-5", active && "drop-shadow-sm")} />
-                <span className="truncate w-full text-center">{item.label}</span>
-                {active && (
-                  <span className="absolute bottom-0 h-0.5 w-8 rounded-full bg-primary" />
-                )}
+                <span
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    active ? "bg-primary/15 text-primary" : "text-muted-foreground"
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                </span>
+                <span className={cn("text-[10px] font-medium", active ? "text-primary" : "text-muted-foreground")}>
+                  {item.label}
+                </span>
               </Link>
             );
           })}
