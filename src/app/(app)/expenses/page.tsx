@@ -20,16 +20,11 @@ import { ConfirmDeleteDialog } from "@/components/shared/ConfirmDeleteDialog";
 import { createClient } from "@/lib/supabase/client";
 import { formatINR } from "@/lib/utils/currency";
 import { formatDateDisplay, todayIST } from "@/lib/utils/date";
+import { cn } from "@/lib/utils/cn";
 import { submitOrQueue, queueDelete } from "@/lib/offline/sync-engine";
 import { expenseSchema, type ExpenseInput } from "@/lib/validations/purchase-expense.schema";
 import type { Database } from "@/lib/supabase/database.types";
 
-// Derived from the actual generated Enums shape rather than imported as
-// standalone names — the CLI-generated database.types.ts doesn't export
-// ExpenseCategory/PaymentMode as top-level type aliases (only an earlier
-// hand-written version of this file did), so importing them directly broke
-// the build the moment the real generated file replaced that stub. This
-// stays correct across future `npm run db:types` regenerations too.
 type ExpenseCategory = Database["public"]["Enums"]["expense_category"];
 type PaymentMode = Database["public"]["Enums"]["payment_mode"];
 
@@ -42,14 +37,14 @@ const EXPENSE_CATEGORIES: ExpenseCategory[] = [
 const PAYMENT_MODES: PaymentMode[] = ["Cash", "UPI", "Bank Transfer", "Card", "N/A"];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  "Rent": "bg-indigo-500/20 text-indigo-400",
-  "Electricity": "bg-yellow-500/20 text-yellow-400",
-  "Staff Salary": "bg-blue-500/20 text-blue-400",
-  "Wastage / Expiry": "bg-red-500/20 text-red-400",
-  "Packaging": "bg-green-500/20 text-green-400",
-  "Miscellaneous": "bg-slate-500/20 text-slate-400",
-  "Transport": "bg-orange-500/20 text-orange-400",
-  "Maintenance": "bg-purple-500/20 text-purple-400",
+  "Rent": "bg-indigo-500/20 text-indigo-400 border-indigo-500/20",
+  "Electricity": "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 border-yellow-500/20",
+  "Staff Salary": "bg-blue-500/20 text-blue-400 border-blue-500/20",
+  "Wastage / Expiry": "bg-red-500/20 text-red-400 border-red-500/20",
+  "Packaging": "bg-green-500/20 text-green-400 border-green-500/20",
+  "Miscellaneous": "bg-slate-500/20 text-slate-500 dark:text-slate-400 border-slate-500/20",
+  "Transport": "bg-orange-500/20 text-orange-400 border-orange-500/20",
+  "Maintenance": "bg-purple-500/20 text-purple-400 border-purple-500/20",
 };
 
 const EMPTY: ExpenseInput = {
@@ -68,7 +63,6 @@ export default function ExpensesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // ── Delete flow state ──────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<Expense | null>(null);
 
   const supabase = createClient();
@@ -102,46 +96,19 @@ export default function ExpensesPage() {
     else toast.warning("Saved offline — will sync when back online");
     setModalOpen(false);
     reset(EMPTY);
-    void load(); // full reload here is fine — this is a create, not the hot delete path
+    void load();
   }
 
-  // ── Optimistic delete ────────────────────────────────────────────────────────
-  // Step 1: trash icon on a row → stage it, open the shared confirm modal.
-  function requestDelete(e: Expense) {
-    setDeleteTarget(e);
-  }
-
-  // Step 2: user confirms → THIS is the optimistic update.
-  //   a) Remove the row from local state immediately — the UI (including the
-  //      "Total shown" footer, which derives from `expenses` via .reduce) updates
-  //      in the same render, with no spinner and no wait on the network.
-  //   b) Close the modal immediately — no lag between "Delete" click and the
-  //      row disappearing, which is the actual bug being fixed here.
-  //   c) Fire the delete through the SAME offline outbox creates already use
-  //      (queueDelete mirrors submitOrQueue) — so deleting while offline
-  //      queues and syncs later instead of hard-failing. Previously this
-  //      called supabase.delete() directly, which meant deleting was the one
-  //      write on this page that DIDN'T work offline even though creating an
-  //      expense already did.
-  //   d) If it comes back as an outright error (not just "queued"), put the
-  //      row back exactly where it was (by re-inserting and re-sorting) and
-  //      show a toast explaining the rollback — the user's list ends up
-  //      consistent with the database either way, they're just not blocked
-  //      waiting to find out.
   async function confirmDelete() {
     if (!deleteTarget) return;
     const target = deleteTarget;
 
-    // (a) + (b) — instant local removal, instant modal close
     setExpenses((prev) => prev.filter((e) => e.expense_id !== target.expense_id));
     setDeleteTarget(null);
 
-    // (c) — background request, not awaited by the UI before removing the row
     const result = await queueDelete("expenses", "expense_id", target.expense_id);
 
     if (result.status === "error") {
-      // (d) — rollback: put it back in date-order, then newest-first within
-      // the same date, matching the original query's .order() clauses.
       setExpenses((prev) => {
         const restored = [...prev, target];
         return restored.sort((a, b) => {
@@ -153,10 +120,6 @@ export default function ExpensesPage() {
       return;
     }
 
-    // Success toast is deliberately quiet/short since the row already
-    // vanished a moment ago — this just confirms it's permanent. "queued"
-    // gets the same warning phrasing the create flow already uses above,
-    // so offline behavior reads consistently across both actions.
     if (result.status === "queued") {
       toast.warning("Deleted — will sync when back online");
     } else {
@@ -175,14 +138,12 @@ export default function ExpensesPage() {
     total: expenses.filter((e) => e.category === cat).reduce((s, e) => s + e.amount, 0),
   })).filter((c) => c.total > 0).sort((a, b) => b.total - a.total);
 
-  // Both of these derive directly from `expenses` state, so the optimistic
-  // removal above updates them in the exact same render — no separate
-  // "recalculate totals" step, no flash of the stale total before it corrects.
   const grandTotal = expenses.reduce((s, e) => s + e.amount, 0);
   const filteredTotal = filtered.reduce((s, e) => s + e.amount, 0);
 
   return (
     <div className="space-y-4 pb-8">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Expenses</h1>
@@ -190,36 +151,38 @@ export default function ExpensesPage() {
             Total: <span className="font-medium text-destructive">{formatINR(grandTotal)}</span>
           </p>
         </div>
-        <Button onClick={() => { reset(EMPTY); setModalOpen(true); }} className="gap-2">
-          <Plus className="h-4 w-4" /> Add Expense
+        <Button onClick={() => { reset(EMPTY); setModalOpen(true); }} className="gap-2 min-h-[44px]">
+          <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Add Expense</span>
         </Button>
       </div>
 
+      {/* Category Totals Grid */}
       {totalByCategory.length > 0 && (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {totalByCategory.map((c) => (
             <Card
               key={c.category}
-              className="cursor-pointer transition-opacity"
+              className="cursor-pointer transition-opacity active:scale-95 sm:active:scale-100"
               onClick={() => setCategoryFilter(categoryFilter === c.category ? "all" : c.category)}
             >
               <CardContent className="p-3">
                 <p className="truncate text-xs text-muted-foreground">{c.category}</p>
                 <p className="mt-1 text-base font-semibold tabular-nums text-destructive">{formatINR(c.total)}</p>
-                {categoryFilter === c.category && <p className="mt-0.5 text-xs text-primary">Filtered ↑</p>}
+                {categoryFilter === c.category && <p className="mt-0.5 text-xs font-medium text-primary">Filtered ↑</p>}
               </CardContent>
             </Card>
           ))}
         </div>
       )}
 
+      {/* Filters */}
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search description or category…" className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Input placeholder="Search description or category…" className="pl-9 min-h-[44px] text-base" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-full sm:w-52"><SelectValue placeholder="All Categories" /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-52 min-h-[44px] text-base"><SelectValue placeholder="All Categories" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Categories</SelectItem>
             {EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -227,90 +190,132 @@ export default function ExpensesPage() {
         </Select>
       </div>
 
+      {/* Main Data Container */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Description</th>
-                  <th className="px-4 py-3">Mode</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={6} />)
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-16 text-center text-muted-foreground">
-                      <div className="flex flex-col items-center gap-2">
-                        <Receipt className="h-8 w-8" />
-                        <p className="text-sm">No expenses found</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((e) => (
-                    <tr key={e.expense_id} className="border-b border-border/50 transition-colors hover:bg-muted/40">
-                      <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDateDisplay(e.expense_date)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_COLORS[e.category] ?? "bg-muted text-muted-foreground"}`}>
+          {loading ? (
+            <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+              <Receipt className="h-8 w-8 opacity-40" />
+              <p className="text-sm">No expenses found</p>
+            </div>
+          ) : (
+            <div className="w-full">
+              {/* MOBILE VIEW: Stacked Touch Cards */}
+              <div className="grid grid-cols-1 gap-3 p-3 md:hidden">
+                {filtered.map((e) => (
+                  <div key={e.expense_id} className="flex flex-col rounded-xl border bg-card p-4 shadow-sm transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex flex-col items-start gap-1.5">
+                        <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold", CATEGORY_COLORS[e.category] ?? "bg-muted text-muted-foreground")}>
                           {e.category}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{e.description || "—"}</td>
-                      <td className="px-4 py-3"><Badge variant="outline" className="text-xs">{e.payment_mode}</Badge></td>
-                      <td className="px-4 py-3 text-right font-medium tabular-nums text-destructive">{formatINR(e.amount)}</td>
-                      <td className="px-4 py-3 text-right">
-                        {/* Same button size/variant/hover treatment as Inventory's delete action */}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => requestDelete(e)}
-                          title="Delete"
-                          className="hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </td>
+                        <span className="text-sm font-medium text-foreground leading-snug">
+                          {e.description || "No description"}
+                        </span>
+                      </div>
+                      <div className="flex flex-col items-end text-right shrink-0">
+                        <span className="font-bold text-base text-destructive tabular-nums">{formatINR(e.amount)}</span>
+                        <span className="text-xs text-muted-foreground mt-1">{formatDateDisplay(e.expense_date)}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
+                      <Badge variant="outline" className="text-xs bg-muted/30 font-medium px-2 py-0.5">
+                        {e.payment_mode}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => requestDelete(e)}
+                        aria-label={`Delete ${e.category} expense`}
+                        className="min-h-[44px] min-w-[44px] p-0 hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Mobile Filtered Total Footer */}
+                <div className="mt-2 flex items-center justify-between rounded-lg border bg-muted/30 p-4">
+                  <span className="text-sm font-medium text-muted-foreground">Total shown</span>
+                  <span className="font-bold tabular-nums text-destructive text-lg">{formatINR(filteredTotal)}</span>
+                </div>
+              </div>
+
+              {/* DESKTOP VIEW: Standard Table */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Category</th>
+                      <th className="px-4 py-3">Description</th>
+                      <th className="px-4 py-3">Mode</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-              {!loading && filtered.length > 0 && (
-                <tfoot>
-                  <tr className="border-t border-border bg-muted/30">
-                    <td colSpan={4} className="px-4 py-2 text-xs font-medium text-muted-foreground">Total shown</td>
-                    <td className="px-4 py-2 text-right font-semibold tabular-nums text-destructive">
-                      {formatINR(filteredTotal)}
-                    </td>
-                    <td />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {filtered.map((e) => (
+                      <tr key={e.expense_id} className="border-b border-border/50 transition-colors hover:bg-muted/40">
+                        <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDateDisplay(e.expense_date)}</td>
+                        <td className="px-4 py-3">
+                          <span className={cn("rounded-full border px-2 py-0.5 text-xs font-medium", CATEGORY_COLORS[e.category] ?? "bg-muted text-muted-foreground")}>
+                            {e.category}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-foreground font-medium">{e.description || "—"}</td>
+                        <td className="px-4 py-3"><Badge variant="outline" className="text-xs bg-muted/30">{e.payment_mode}</Badge></td>
+                        <td className="px-4 py-3 text-right font-bold tabular-nums text-destructive">{formatINR(e.amount)}</td>
+                        <td className="px-4 py-3 text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => requestDelete(e)}
+                            title="Delete"
+                            aria-label={`Delete ${e.category} expense`}
+                            className="min-h-[36px] min-w-[36px] p-0 hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-border bg-muted/30">
+                      <td colSpan={4} className="px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wide">Total shown</td>
+                      <td className="px-4 py-3 text-right font-bold tabular-nums text-destructive text-base">
+                        {formatINR(filteredTotal)}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
+      {/* Add Expense Modal */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Add Expense</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
                 <Label>Date *</Label>
-                <Input type="date" max={todayIST()} {...register("expense_date")} />
+                <Input type="date" max={todayIST()} className="min-h-[44px] text-base" {...register("expense_date")} />
                 {errors.expense_date && <p className="text-xs text-destructive">{errors.expense_date.message}</p>}
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Category *</Label>
                 <Select value={watch("category")} onValueChange={(v) => setValue("category", v as any, { shouldValidate: true })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="min-h-[44px] text-base"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {EXPENSE_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                   </SelectContent>
@@ -318,26 +323,26 @@ export default function ExpensesPage() {
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Description</Label>
-                <Textarea rows={2} placeholder="e.g. Monthly shop floor lease payment" {...register("description")} />
+                <Textarea rows={2} className="text-base min-h-[44px]" placeholder="e.g. Monthly shop floor lease payment" {...register("description")} />
               </div>
               <div className="space-y-1.5">
                 <Label>Amount (₹) *</Label>
-                <Input type="number" step="0.01" min="0.01" {...register("amount")} />
+                <Input type="text" inputMode="decimal" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("amount")} />
                 {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Payment Mode</Label>
                 <Select value={watch("payment_mode")} onValueChange={(v) => setValue("payment_mode", v as any)}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="min-h-[44px] text-base"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PAYMENT_MODES.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving} className="gap-2">
+            <DialogFooter className="gap-2 sm:gap-0 mt-2">
+              <Button type="button" variant="outline" className="min-h-[44px]" onClick={() => setModalOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={saving} className="gap-2 min-h-[44px]">
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 Save Expense
               </Button>
@@ -346,7 +351,6 @@ export default function ExpensesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Shared delete confirmation modal — identical component/copy/layout as Inventory */}
       <ConfirmDeleteDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}

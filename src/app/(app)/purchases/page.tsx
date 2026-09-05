@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Plus, Search, CheckCircle, Loader2, AlertCircle } from "lucide-react";
+import { Plus, Search, CheckCircle, Loader2, Truck, AlertCircle, ScanLine, Receipt } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,19 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { CrateDeliveryIllustration } from "@/components/shared/ShopIllustrations";
+import dynamic from "next/dynamic";
+
+const BarcodeScannerDialog = dynamic(
+  () => import("@/components/purchases/BarcodeScannerDialog").then((m) => m.BarcodeScannerDialog),
+  { 
+    ssr: false,
+    loading: () => <div className="p-4 text-center text-sm text-muted-foreground animate-pulse">Loading camera module...</div>
+  }
+);
+const QuickAddProductDialog = dynamic(
+  () => import("@/components/purchases/QuickAddProductDialog").then((m) => m.QuickAddProductDialog),
+  { ssr: false }
+);
 
 import { createClient } from "@/lib/supabase/client";
 import { formatINR } from "@/lib/utils/currency";
@@ -22,6 +34,7 @@ import { formatDateDisplay, todayIST } from "@/lib/utils/date";
 import { cn } from "@/lib/utils/cn";
 import { purchaseSchema, type PurchaseInput } from "@/lib/validations/purchase-expense.schema";
 import { submitOrQueue } from "@/lib/offline/sync-engine";
+import { offlineDB } from "@/lib/offline/db";
 import type { Database } from "@/lib/supabase/database.types";
 
 type Purchase = Database["public"]["Tables"]["purchases"]["Row"];
@@ -46,6 +59,11 @@ export default function PurchasesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
+
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [scannedBarcode, setScannedBarcode] = useState("");
+  const [matching, setMatching] = useState(false);
 
   const supabase = createClient();
 
@@ -87,9 +105,63 @@ export default function PurchasesPage() {
     void load();
   }
 
+  function selectProductInForm(productId: string) {
+    if (!modalOpen) {
+      reset(EMPTY);
+      setModalOpen(true);
+    }
+    setValue("product_id", productId, { shouldValidate: true });
+  }
+
+  async function handleScan(code: string) {
+    setScannerOpen(false);
+    setMatching(true);
+
+    let match: Product | null = null;
+    let live = false;
+
+    try {
+      if (navigator.onLine) {
+        const { data } = await (supabase.from("products") as any)
+          .select("product_id, name, unit")
+          .eq("upc_barcode", code)
+          .eq("is_active", true)
+          .maybeSingle();
+        match = data ?? null;
+        live = true;
+      }
+    } catch (err) {
+      console.error("[Purchases] live barcode lookup failed, falling back to offline cache:", err);
+    }
+
+    if (!match && !live) {
+      const cached = await offlineDB?.cachedProducts.where("upc_barcode").equals(code).first().catch(() => undefined);
+      if (cached) match = { product_id: cached.product_id, name: cached.name, unit: cached.unit };
+    }
+
+    setMatching(false);
+
+    if (match) {
+      selectProductInForm(match.product_id);
+      toast.success(`Matched: ${match.name}${live ? "" : " (offline copy)"}`);
+      return;
+    }
+
+    setScannedBarcode(code);
+    setQuickAddOpen(true);
+    if (!live) {
+      toast.warning("No connection to check the full catalog — add as new if this isn't already a product");
+    }
+  }
+
+  function handleProductCreated(product: { product_id: string; name: string; unit: string }) {
+    setProducts((prev) => [...prev, product].sort((a, b) => a.name.localeCompare(b.name)));
+    setQuickAddOpen(false);
+    selectProductInForm(product.product_id);
+  }
+
   async function markPaid(purchase_id: string) {
     setMarkingId(purchase_id);
-    // cast as any — fixes TypeScript strict generic mismatch on payment_status enum
     const { error } = await (supabase.from("purchases") as any)
       .update({ payment_status: "Paid" })
       .eq("purchase_id", purchase_id);
@@ -126,9 +198,15 @@ export default function PurchasesPage() {
             </p>
           )}
         </div>
-        <Button onClick={() => { reset(EMPTY); setModalOpen(true); }} className="gap-2">
-          <Plus className="h-4 w-4" /> Log Purchase
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setScannerOpen(true)} disabled={matching} className="gap-2 min-h-[44px]">
+            {matching ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+            <span className="hidden sm:inline">Scan</span>
+          </Button>
+          <Button onClick={() => { reset(EMPTY); setModalOpen(true); }} className="gap-2 min-h-[44px]">
+            <Plus className="h-4 w-4" /> <span className="hidden sm:inline">Log Purchase</span>
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -149,10 +227,10 @@ export default function PurchasesPage() {
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search product or supplier…" className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Input placeholder="Search product or supplier…" className="pl-9 min-h-[44px] text-base" value={query} onChange={(e) => setQuery(e.target.value)} />
         </div>
         <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
-          <SelectTrigger className="w-full sm:w-40"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full sm:w-40 min-h-[44px] text-base"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="Paid">Paid</SelectItem>
@@ -166,65 +244,110 @@ export default function PurchasesPage() {
           {loading ? (
             <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
           ) : filtered.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-16 text-muted-foreground">
-              <CrateDeliveryIllustration className="h-24 w-24" />
+            <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+              <Receipt className="h-8 w-8 opacity-20" />
               <p className="text-sm">No purchases found</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                    <th className="px-4 py-3 font-medium">Date</th>
-                    <th className="px-4 py-3 font-medium">Product</th>
-                    <th className="px-4 py-3 font-medium">Supplier</th>
-                    <th className="px-4 py-3 font-medium text-right">Qty</th>
-                    <th className="px-4 py-3 font-medium text-right">Unit Cost</th>
-                    <th className="px-4 py-3 font-medium text-right">Total</th>
-                    <th className="px-4 py-3 font-medium text-center">Status</th>
-                    <th className="px-4 py-3 font-medium"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((p) => {
-                    const prod = productMap[p.product_id];
-                    const isPending = p.payment_status === "Pending";
-                    return (
-                      <tr key={p.purchase_id} className={cn(
-                        "border-b border-border/50 transition-colors",
-                        isPending ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/40"
-                      )}>
-                        <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDateDisplay(p.purchase_date)}</td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium">{prod?.name ?? p.product_id}</p>
-                          <p className="text-xs text-muted-foreground">{p.product_id}</p>
-                        </td>
-                        <td className="px-4 py-3">{p.supplier_name}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{p.qty} {prod?.unit ?? ""}</td>
-                        <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.unit_cost)}</td>
-                        <td className="px-4 py-3 text-right tabular-nums font-medium">{formatINR(p.total_amount ?? 0)}</td>
-                        <td className="px-4 py-3 text-center">
-                          {isPending
-                            ? <Badge variant="destructive">Pending</Badge>
-                            : <Badge className="bg-primary/20 text-primary">Paid</Badge>}
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {isPending && (
-                            <Button size="sm" variant="outline" className="gap-1.5 text-xs"
-                              disabled={markingId === p.purchase_id}
-                              onClick={() => void markPaid(p.purchase_id)}>
-                              {markingId === p.purchase_id
-                                ? <Loader2 className="h-3 w-3 animate-spin" />
-                                : <CheckCircle className="h-3 w-3" />}
-                              Mark Paid
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="w-full">
+              {/* MOBILE VIEW: Rendered as compact, touch-friendly cards */}
+              <div className="grid grid-cols-1 gap-3 p-3 md:hidden">
+                {filtered.map((p) => {
+                  const prod = productMap[p.product_id];
+                  const isPending = p.payment_status === "Pending";
+                  return (
+                    <div key={p.purchase_id} className={cn(
+                      "flex flex-col rounded-xl border p-4 shadow-sm transition-colors",
+                      isPending ? "bg-destructive/5 border-destructive/20" : "bg-card border-border"
+                    )}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-base leading-tight">{prod?.name ?? p.product_id}</span>
+                          <span className="text-xs text-muted-foreground mt-1">{p.supplier_name}</span>
+                        </div>
+                        <div className="flex flex-col items-end text-right">
+                          <span className="font-bold text-base text-foreground tabular-nums">{formatINR(p.total_amount ?? 0)}</span>
+                          <span className="text-xs text-muted-foreground mt-1">{formatDateDisplay(p.purchase_date)}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
+                        <div className="flex items-center gap-3">
+                          {isPending ? <Badge variant="destructive" className="px-2.5 py-0.5">Pending</Badge> : <Badge className="bg-primary/20 text-primary px-2.5 py-0.5">Paid</Badge>}
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {p.qty} {prod?.unit ?? ""} @ {formatINR(p.unit_cost)}
+                          </span>
+                        </div>
+                        {isPending && (
+                          <Button size="sm" variant="outline" className="gap-1.5 h-8 px-3 text-xs"
+                            disabled={markingId === p.purchase_id}
+                            onClick={() => void markPaid(p.purchase_id)}>
+                            {markingId === p.purchase_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3 text-emerald-500" />}
+                            Pay
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* DESKTOP VIEW: Standard Table Format */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs text-muted-foreground bg-muted/30">
+                      <th className="px-4 py-3 font-medium">Date</th>
+                      <th className="px-4 py-3 font-medium">Product</th>
+                      <th className="px-4 py-3 font-medium">Supplier</th>
+                      <th className="px-4 py-3 font-medium text-right">Qty</th>
+                      <th className="px-4 py-3 font-medium text-right">Unit Cost</th>
+                      <th className="px-4 py-3 font-medium text-right">Total</th>
+                      <th className="px-4 py-3 font-medium text-center">Status</th>
+                      <th className="px-4 py-3 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((p) => {
+                      const prod = productMap[p.product_id];
+                      const isPending = p.payment_status === "Pending";
+                      return (
+                        <tr key={p.purchase_id} className={cn(
+                          "border-b border-border/50 transition-colors",
+                          isPending ? "bg-destructive/5 hover:bg-destructive/10" : "hover:bg-muted/40"
+                        )}>
+                          <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">{formatDateDisplay(p.purchase_date)}</td>
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-base md:text-sm">{prod?.name ?? p.product_id}</p>
+                            <p className="text-xs text-muted-foreground">{p.product_id}</p>
+                          </td>
+                          <td className="px-4 py-3">{p.supplier_name}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-medium">{p.qty} <span className="font-normal text-muted-foreground">{prod?.unit ?? ""}</span></td>
+                          <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.unit_cost)}</td>
+                          <td className="px-4 py-3 text-right tabular-nums font-bold">{formatINR(p.total_amount ?? 0)}</td>
+                          <td className="px-4 py-3 text-center">
+                            {isPending
+                              ? <Badge variant="destructive">Pending</Badge>
+                              : <Badge className="bg-primary/20 text-primary">Paid</Badge>}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {isPending && (
+                              <Button size="sm" variant="outline" className="gap-1.5 text-xs min-h-[44px] md:min-h-0"
+                                disabled={markingId === p.purchase_id}
+                                onClick={() => void markPaid(p.purchase_id)}>
+                                {markingId === p.purchase_id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <CheckCircle className="h-3 w-3 text-emerald-500" />}
+                                Mark Paid
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </CardContent>
@@ -237,44 +360,51 @@ export default function PurchasesPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
                 <Label>Date *</Label>
-                <Input type="date" max={todayIST()} {...register("purchase_date")} />
+                <Input type="date" max={todayIST()} className="min-h-[44px] text-base" {...register("purchase_date")} />
                 {errors.purchase_date && <p className="text-xs text-destructive">{errors.purchase_date.message}</p>}
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Product *</Label>
-                <Select value={watch("product_id")} onValueChange={(v) => setValue("product_id", v, { shouldValidate: true })}>
-                  <SelectTrigger><SelectValue placeholder="Select product…" /></SelectTrigger>
-                  <SelectContent>
-                    {products.map((p) => <SelectItem key={p.product_id} value={p.product_id}>{p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select value={watch("product_id")} onValueChange={(v) => setValue("product_id", v, { shouldValidate: true })}>
+                    <SelectTrigger className="flex-1 min-h-[44px] text-base"><SelectValue placeholder="Select product…" /></SelectTrigger>
+                    <SelectContent>
+                      {products.map((p) => <SelectItem key={p.product_id} value={p.product_id}>{p.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="icon" aria-label="Scan barcode" onClick={() => setScannerOpen(true)} title="Scan barcode instead" className="min-h-[44px] min-w-[44px]">
+                    <ScanLine className="h-4 w-4" />
+                  </Button>
+                </div>
                 {errors.product_id && <p className="text-xs text-destructive">{errors.product_id.message}</p>}
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Supplier Name *</Label>
-                <Input placeholder="e.g. Anand Distributors" {...register("supplier_name")} />
+                <Input placeholder="e.g. Anand Distributors" className="min-h-[44px] text-base" {...register("supplier_name")} />
                 {errors.supplier_name && <p className="text-xs text-destructive">{errors.supplier_name.message}</p>}
               </div>
+              
               <div className="space-y-1.5">
                 <Label>Quantity *</Label>
-                <Input type="number" min="1" {...register("qty")} />
+                <Input type="text" inputMode="decimal" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("qty")} />
                 {errors.qty && <p className="text-xs text-destructive">{errors.qty.message}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>Unit Cost (₹) *</Label>
-                <Input type="number" step="0.01" min="0" {...register("unit_cost")} />
+                <Input type="text" inputMode="decimal" pattern="[0-9]*" className="min-h-[44px] text-base" {...register("unit_cost")} />
                 {errors.unit_cost && <p className="text-xs text-destructive">{errors.unit_cost.message}</p>}
               </div>
+
               <div className="col-span-2 flex justify-between rounded-md bg-muted px-4 py-2 text-xs">
                 <span className="text-muted-foreground">Invoice Total</span>
-                <span className="font-semibold tabular-nums">
+                <span className="font-semibold tabular-nums text-base">
                   {formatINR((Number(watch("qty")) || 0) * (Number(watch("unit_cost")) || 0))}
                 </span>
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Payment Status *</Label>
                 <Select value={watch("payment_status")} onValueChange={(v) => setValue("payment_status", v as any, { shouldValidate: true })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="min-h-[44px] text-base"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Paid">Paid — stock added immediately</SelectItem>
                     <SelectItem value="Pending">Pending — Accounts Payable</SelectItem>
@@ -283,12 +413,12 @@ export default function PurchasesPage() {
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Notes</Label>
-                <Textarea rows={2} placeholder="Invoice number, batch, etc." {...register("notes")} />
+                <Textarea rows={2} placeholder="Invoice number, batch, etc." className="text-base" {...register("notes")} />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={saving} className="gap-2">
+              <Button type="button" variant="outline" className="min-h-[44px]" onClick={() => setModalOpen(false)}>Cancel</Button>
+              <Button type="submit" disabled={saving} className="gap-2 min-h-[44px]">
                 {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                 Log Purchase
               </Button>
@@ -296,6 +426,19 @@ export default function PurchasesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <BarcodeScannerDialog
+        open={scannerOpen}
+        onOpenChange={setScannerOpen}
+        onScan={handleScan}
+      />
+
+      <QuickAddProductDialog
+        open={quickAddOpen}
+        onOpenChange={setQuickAddOpen}
+        scannedBarcode={scannedBarcode}
+        onCreated={handleProductCreated}
+      />
     </div>
   );
 }
