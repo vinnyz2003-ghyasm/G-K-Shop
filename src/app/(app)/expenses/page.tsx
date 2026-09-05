@@ -99,6 +99,11 @@ export default function ExpensesPage() {
     void load();
   }
 
+  // FIX: Added the missing function back in!
+  function requestDelete(e: Expense) {
+    setDeleteTarget(e);
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) return;
     const target = deleteTarget;
